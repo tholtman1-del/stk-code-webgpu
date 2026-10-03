@@ -246,7 +246,9 @@ void main()
         vec2 viewport_offset = u_camera.m_viewport.xy / u_camera.m_screensize;
         bool hit = true;
         vec2 coords;
-        if (u_hiz_iterations == 0)
+        // Through a variable, see deferred_pbr.frag
+        uint hiz_iterations = u_hiz_iterations;
+        if (hiz_iterations == 0)
         {
             coords = RayCast(reflected, xpos, u_camera.m_projection_matrix,
                 viewport_scale, viewport_offset, u_depth);

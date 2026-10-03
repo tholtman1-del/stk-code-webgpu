@@ -17,7 +17,10 @@ layout(push_constant) uniform Constants
 void main()
 {
     float depth = GE_SUBPASS_LOAD(u_depth).x;
-    if (!u_has_skybox && depth == 1.0)
+    // Through a variable: an expression of specialization constants only
+    // becomes OpSpecConstantOp, which naga (WebGPU) cannot read
+    bool has_skybox = u_has_skybox;
+    if (!has_skybox && depth == 1.0)
         discard;
     vec3 diffuse_color = GE_SUBPASS_LOAD(u_color).xyz;
     vec3 pbr = vec3(GE_SUBPASS_LOAD(u_normal).zw, GE_SUBPASS_LOAD(u_color).w);
