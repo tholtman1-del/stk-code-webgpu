@@ -369,6 +369,7 @@ private:
     std::array<wgpu::Sampler, GVS_COUNT> m_samplers;
     GEVulkanSampler m_mesh_sampler;
     uint32_t m_max_texture_size;
+    bool m_bc_textures;
     core::stringc m_vendor_info;
 
     video::SColor m_clear_color;

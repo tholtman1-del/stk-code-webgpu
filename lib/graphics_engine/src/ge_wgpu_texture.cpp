@@ -1,5 +1,6 @@
 #include "ge_wgpu_texture.hpp"
 
+#include "ge_compressor_s3tc_bc3.hpp"
 #include "ge_main.hpp"
 #include "ge_mipmap_generator.hpp"
 #include "ge_texture.hpp"
@@ -24,8 +25,9 @@ namespace GE
 struct GEWGPUTexture::Decoded
 {
     video::IImage* m_image = NULL;
-    // Level 0 points into m_image
+    // Level 0 points into m_image (unless compressed)
     std::unique_ptr<GEMipmapGenerator> m_mipmaps;
+    bool m_bc3 = false;
     // ------------------------------------------------------------------------
     ~Decoded()
     {
@@ -180,8 +182,24 @@ void GEWGPUTexture::decode(std::shared_ptr<std::vector<uint8_t> > bytes)
         {
             const bool normal_map = (std::string(NamedPath.getPtr()).find(
                 "_Normal.") != std::string::npos);
-            decoded->m_mipmaps.reset(new GEMipmapGenerator(
-                (uint8_t*)image->lock(), 4, size, normal_map));
+            uint8_t* data = (uint8_t*)image->lock();
+            // BC blocks need the size of level 0 to be a multiple of 4
+            decoded->m_bc3 = getGEConfig()->m_texture_compression &&
+                m_driver->supportsTextureCompression() &&
+                size.Width % 4 == 0 && size.Height % 4 == 0;
+            if (decoded->m_bc3)
+            {
+                // squish reads RGBA
+                for (unsigned i = 0; i < size.Width * size.Height; i++)
+                    std::swap(data[i * 4], data[i * 4 + 2]);
+                decoded->m_mipmaps.reset(new GECompressorS3TCBC3(data, 4,
+                    size, normal_map));
+            }
+            else
+            {
+                decoded->m_mipmaps.reset(new GEMipmapGenerator(data, 4, size,
+                    normal_map));
+            }
         }
     }
     {
@@ -225,7 +243,8 @@ void GEWGPUTexture::uploadDecoded()
     }
     if (!decoded)
         return;
-    createTexture(wgpu::TextureFormat::BGRA8Unorm,
+    createTexture(decoded->m_bc3 ? wgpu::TextureFormat::BC3RGBAUnorm :
+        wgpu::TextureFormat::BGRA8Unorm,
         wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst);
     if (decoded->m_mipmaps)
         writeLevels(decoded->m_mipmaps->getAllLevels(), 4);
@@ -267,7 +286,9 @@ void GEWGPUTexture::createTexture(wgpu::TextureFormat format,
                                   wgpu::TextureUsage usage)
 {
     m_format = format;
-    wgpu::TextureFormat srgb = wgpu::TextureFormat::BGRA8UnormSrgb;
+    const bool bc3 = format == wgpu::TextureFormat::BC3RGBAUnorm;
+    wgpu::TextureFormat srgb = bc3 ? wgpu::TextureFormat::BC3RGBAUnormSrgb :
+        wgpu::TextureFormat::BGRA8UnormSrgb;
     wgpu::TextureDescriptor desc;
     desc.label = wgpu::StringView(NamedPath.getPtr());
     desc.size = { m_size.Width, m_size.Height, 1 };
@@ -286,7 +307,7 @@ void GEWGPUTexture::createTexture(wgpu::TextureFormat format,
     unsigned w = m_size.Width, h = m_size.Height;
     for (unsigned i = 0; i < desc.mipLevelCount; i++)
     {
-        m_texture_size += w * h * 4;
+        m_texture_size += bc3 ? get4x4CompressedTextureSize(w, h) : w * h * 4;
         w = std::max(w / 2, 1u);
         h = std::max(h / 2, 1u);
     }
@@ -321,6 +342,7 @@ void GEWGPUTexture::writeLevels(const std::vector<GEImageLevel>& levels,
     const wgpu::Queue& queue = m_driver->getQueue();
     wgpu::TexelCopyTextureInfo dst;
     dst.texture = m_texture;
+    const bool bc3 = m_format == wgpu::TextureFormat::BC3RGBAUnorm;
     for (unsigned i = 0; i < levels.size(); i++)
     {
         const GEImageLevel& level = levels[i];
@@ -329,6 +351,16 @@ void GEWGPUTexture::writeLevels(const std::vector<GEImageLevel>& levels,
         layout.bytesPerRow = level.m_dim.Width * channels;
         layout.rowsPerImage = level.m_dim.Height;
         wgpu::Extent3D extent = { level.m_dim.Width, level.m_dim.Height, 1 };
+        if (bc3)
+        {
+            // 16 bytes per 4x4 block, copies cover whole blocks (also for
+            // the levels smaller than a block)
+            const unsigned blocks_x = (level.m_dim.Width + 3) / 4;
+            const unsigned blocks_y = (level.m_dim.Height + 3) / 4;
+            layout.bytesPerRow = blocks_x * 16;
+            layout.rowsPerImage = blocks_y;
+            extent = { blocks_x * 4, blocks_y * 4, 1 };
+        }
         queue.WriteTexture(&dst, level.m_data, level.m_size, &layout,
             &extent);
     }

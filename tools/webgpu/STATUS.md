@@ -121,14 +121,22 @@ Cloud session notes:
   (`GEWGPUTextureLoader`); files are read on the creating thread, the
   getters wait for decoding, `getView()` uploads on demand. Hacienda race
   start 9.5 s -> 5.5 s under SwiftShader.
+- Optional BC3 texture compression (see Next).
 - Browser logs go to `console.log/warn/error` without terminal colour codes.
   Exceptions in a frame are caught like `main()` does and stop the game;
   the page shows `Module.onGameStopped` (also after quitting).
 
 ## Next
 
-1. Performance: compressed textures (BC/ASTC, the adapter has both under
-   SwiftShader; GE's compressors could run on the loader threads). HiDPI
+0. Test on real GPUs and browsers (everything so far ran on SwiftShader in
+   headless Chromium): Chrome/Edge, Safari, Firefox; split screen, story
+   mode, gamepads; hosting with COOP/COEP and caching of `stk-files/`.
+
+1. Texture compression: BC3 (GECompressorS3TCBC3 on the loader threads)
+   works but is off by default in the browser (`enable_texture_compression`):
+   it slows loading (hacienda start 5.5 s -> 8.9 s) and makes packed PBR
+   maps look washed out. BC7 (bc7enc is Vulkan-only in CMake) or
+   compressing offline in `package_data.py` would fix both. HiDPI
    renders devicePixelRatio² as many pixels; GE's render scale
    (`m_render_scale`) is not used by the WebGPU driver yet.
    Streaming: one request per file while a track loads (could be bundled

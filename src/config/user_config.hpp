@@ -667,8 +667,16 @@ namespace UserConfigParams
         PARAM_DEFAULT(BoolUserConfigParam(true, "split_screen_horizontally",
             &m_video_group, "When playing a non-square amount of players (e.g. 2),"
             " should it split horizontally (top/bottom)"));
+    // Off in the browser: BC3 is the only WebGPU compression, done on the
+    // CPU at load time, and it degrades the packed PBR maps
+#ifdef __EMSCRIPTEN__
+#define STK_TEXTURE_COMPRESSION_DEFAULT false
+#else
+#define STK_TEXTURE_COMPRESSION_DEFAULT true
+#endif
     PARAM_PREFIX BoolUserConfigParam        m_texture_compression
-        PARAM_DEFAULT(BoolUserConfigParam(true, "enable_texture_compression",
+        PARAM_DEFAULT(BoolUserConfigParam(STK_TEXTURE_COMPRESSION_DEFAULT,
+        "enable_texture_compression",
         &m_video_group, "Enable Texture Compression"));
     /** This is a bit flag: bit 0: enabled (1) or disabled(0).
      *  Bit 1: setting done by default(0), or by user choice (2). This allows

@@ -65,6 +65,8 @@ GEWGPUDriver::GEWGPUDriver(const SIrrlichtCreationParameters& params,
     if (!m_device)
         throw std::runtime_error("No WebGPU device was provided by the page");
     m_queue = m_device.GetQueue();
+    // Cached: loader threads cannot call WebGPU
+    m_bc_textures = hasFeature(wgpu::FeatureName::TextureCompressionBC);
     GEWGPUTextureLoader::init();
     m_instance = wgpu::CreateInstance(nullptr);
 
@@ -223,8 +225,8 @@ video::ITexture* GEWGPUDriver::createDeviceDependentTexture(IImage* surface,
 // ----------------------------------------------------------------------------
 bool GEWGPUDriver::supportsTextureCompression() const
 {
-    return hasFeature(wgpu::FeatureName::TextureCompressionBC) ||
-        hasFeature(wgpu::FeatureName::TextureCompressionASTC);
+    // Only BC3 (GECompressorS3TCBC3), the ASTC encoder is not built for wasm
+    return m_bc_textures;
 }   // supportsTextureCompression
 
 // ----------------------------------------------------------------------------
