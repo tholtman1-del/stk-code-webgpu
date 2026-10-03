@@ -61,7 +61,38 @@ def compile_one(src, variant, pbr, verbose):
             capture_output=True, text=True)
         if r.returncode != 0:
             return False, "naga: " + (r.stdout + r.stderr).strip()
+        if stage == "vert":
+            wgsl.write_text(unpack_packed_inputs(wgsl.read_text()))
     return True, ""
+
+# Normals and tangents are A2B10G10R10 snorm in S3DVertexSkinnedMesh, which
+# WebGPU has no vertex format for. Those inputs are read as u32 and unpacked.
+PACKED_SNORM_INPUTS = {1: "v_normal", 5: "v_tangent"}
+UNPACK_FN = """
+fn ge_unpack_snorm_10_10_10_2(p: u32) -> vec4<f32> {
+    let v = vec4<f32>(f32(bitcast<i32>(p << 22u) >> 22u) / 511.0,
+        f32(bitcast<i32>(p << 12u) >> 22u) / 511.0,
+        f32(bitcast<i32>(p << 2u) >> 22u) / 511.0,
+        f32(bitcast<i32>(p) >> 30u));
+    return max(v, vec4<f32>(-1.0));
+}
+"""
+
+def unpack_packed_inputs(src):
+    unpacked = []
+    for location, name in PACKED_SNORM_INPUTS.items():
+        decl = "@location(%d) %s: vec4<f32>" % (location, name)
+        if decl in src:
+            src = src.replace(decl, "@location(%d) %s_packed: u32" %
+                (location, name))
+            unpacked.append(name)
+    if not unpacked:
+        return src
+    m = re.search(r"@vertex\s*\nfn main\([^)]*\)[^{]*\{\n", src)
+    lets = "".join("    let %s = ge_unpack_snorm_10_10_10_2(%s_packed);\n" %
+        (n, n) for n in unpacked)
+    src = src[:m.end()] + lets + src[m.end():]
+    return src + UNPACK_FN
 
 # Samplers produced by --split-combined-image-sampler share the binding of
 # their texture. WGSL needs unique bindings, so samplers move up by

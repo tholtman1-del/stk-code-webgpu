@@ -245,7 +245,9 @@ fn main_1() {
 }
 
 @vertex 
-fn main(@builtin(instance_index) gl_InstanceIndex: u32, @location(7) v_weight: vec4<f32>, @location(6) v_joint: vec4<i32>, @location(0) v_position: vec3<f32>, @location(2) v_color: vec4<f32>, @location(3) v_uv: vec2<f32>, @location(4) v_uv_two: vec2<f32>, @location(1) v_normal: vec4<f32>, @location(5) v_tangent: vec4<f32>) -> VertexOutput {
+fn main(@builtin(instance_index) gl_InstanceIndex: u32, @location(7) v_weight: vec4<f32>, @location(6) v_joint: vec4<i32>, @location(0) v_position: vec3<f32>, @location(2) v_color: vec4<f32>, @location(3) v_uv: vec2<f32>, @location(4) v_uv_two: vec2<f32>, @location(1) v_normal_packed: u32, @location(5) v_tangent_packed: u32) -> VertexOutput {
+    let v_normal = ge_unpack_snorm_10_10_10_2(v_normal_packed);
+    let v_tangent = ge_unpack_snorm_10_10_10_2(v_tangent_packed);
     gl_InstanceIndex_1 = i32(gl_InstanceIndex);
     v_weight_1 = v_weight;
     v_joint_1 = v_joint;
@@ -269,4 +271,12 @@ fn main(@builtin(instance_index) gl_InstanceIndex: u32, @location(7) v_weight: v
     let _e41 = f_tangent;
     let _e42 = f_normal;
     return VertexOutput(_e33, _e34, _e35, _e36, _e37, _e38, _e39, _e40, _e41, _e42);
+}
+
+fn ge_unpack_snorm_10_10_10_2(p: u32) -> vec4<f32> {
+    let v = vec4<f32>(f32(bitcast<i32>(p << 22u) >> 22u) / 511.0,
+        f32(bitcast<i32>(p << 12u) >> 22u) / 511.0,
+        f32(bitcast<i32>(p << 2u) >> 22u) / 511.0,
+        f32(bitcast<i32>(p) >> 30u));
+    return max(v, vec4<f32>(-1.0));
 }

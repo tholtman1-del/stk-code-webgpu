@@ -23,6 +23,22 @@ if ! command -v glslangValidator > /dev/null || ! command -v spirv-opt > /dev/nu
     fi
 fi
 
+# compile_shaders.py needs --split-combined-image-sampler (SPIRV-Tools
+# 2024.4+), newer than some distributions ship
+if ! spirv-opt --help 2>/dev/null | grep -q split-combined-image-sampler; then
+    SRC="$ROOT/../spirv-tools-src"
+    if [ ! -d "$SRC" ]; then
+        git clone --depth 1 https://github.com/KhronosGroup/SPIRV-Tools "$SRC"
+        git clone --depth 1 https://github.com/KhronosGroup/SPIRV-Headers \
+            "$SRC/external/spirv-headers"
+    fi
+    cmake -S "$SRC" -B "$SRC/build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+        -DSPIRV_SKIP_TESTS=ON -DSPIRV_WERROR=OFF
+    cmake --build "$SRC/build"
+    sudo cmake --install "$SRC/build" --prefix /usr/local
+    hash -r
+fi
+
 if ! command -v naga > /dev/null; then
     if ! command -v cargo > /dev/null; then
         curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
