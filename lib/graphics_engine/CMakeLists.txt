@@ -57,21 +57,40 @@ if(APPLE AND NOT DLOPEN_MOLTENVK)
     endif()
 endif()
 
-if(UNIX OR MINGW)
+if(EMSCRIPTEN)
+    # webgpu_cpp.h needs C++17
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++17")
+elseif(UNIX OR MINGW)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++0x")
 endif()
 
+set(GE_COMMON_SOURCES
+    src/ge_main.cpp
+    src/ge_material_manager.cpp
+    src/ge_occlusion_culling.cpp
+    src/ge_texture.cpp
+    src/ge_spm.cpp
+    src/ge_spm_buffer.cpp
+)
+
+if(EMSCRIPTEN)
 set(GE_SOURCES
+    ${GE_COMMON_SOURCES}
+    src/ge_wgpu_2d_renderer.cpp
+    src/ge_wgpu_driver.cpp
+    src/ge_wgpu_shader_manager.cpp
+    src/ge_wgpu_texture.cpp
+)
+else()
+set(GE_SOURCES
+    ${GE_COMMON_SOURCES}
     src/gl.c
     src/ge_compressor_astc_4x4.cpp
     src/ge_compressor_bptc_bc7.cpp
     src/ge_compressor_s3tc_bc3.cpp
     src/ge_culling_tool.cpp
     src/ge_dx9_texture.cpp
-    src/ge_main.cpp
-    src/ge_material_manager.cpp
-    src/ge_occlusion_culling.cpp
-    src/ge_texture.cpp
+    src/ge_gl_texture.cpp
     src/ge_vma.cpp
     src/ge_vulkan_2d_renderer.cpp
     src/ge_vulkan_array_texture.cpp
@@ -97,13 +116,11 @@ set(GE_SOURCES
     src/ge_vulkan_skybox_renderer.cpp
     src/ge_vulkan_texture.cpp
     src/ge_vulkan_texture_descriptor.cpp
-    src/ge_gl_texture.cpp
-    src/ge_spm.cpp
-    src/ge_spm_buffer.cpp
 )
 
 if(NOT APPLE OR DLOPEN_MOLTENVK)
     set(GE_SOURCES ${GE_SOURCES} src/vulkan.c)
+endif()
 endif()
 
 option(BC7_ISPC "Enable BC7 (BPTC) support (requires ispc and cmake >= 3.19)" OFF)

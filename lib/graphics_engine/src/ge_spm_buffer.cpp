@@ -1,8 +1,10 @@
 #include "ge_spm_buffer.hpp"
 
 #include "ge_main.hpp"
+#ifdef _IRR_COMPILE_WITH_VULKAN_
 #include "ge_vulkan_driver.hpp"
 #include "ge_vulkan_features.hpp"
+#endif
 
 #include <algorithm>
 #include <stdexcept>
@@ -14,6 +16,7 @@ namespace GE
 // ----------------------------------------------------------------------------
 void GESPMBuffer::createVertexIndexBuffer()
 {
+#ifdef _IRR_COMPILE_WITH_VULKAN_
     if (GEVulkanFeatures::supportsBaseVertexRendering())
         return;
 
@@ -84,11 +87,13 @@ void GESPMBuffer::createVertexIndexBuffer()
 
     vk->copyBuffer(staging_buffer, m_buffer, total_size);
     vmaDestroyBuffer(vk->getVmaAllocator(), staging_buffer, staging_memory);
+#endif
 }   // createVertexIndexBuffer
 
 // ----------------------------------------------------------------------------
 void GESPMBuffer::destroyVertexIndexBuffer()
 {
+#ifdef _IRR_COMPILE_WITH_VULKAN_
     if (m_buffer == VK_NULL_HANDLE || m_memory == VK_NULL_HANDLE)
         return;
 
@@ -96,6 +101,7 @@ void GESPMBuffer::destroyVertexIndexBuffer()
     vmaDestroyBuffer(getVKDriver()->getVmaAllocator(), m_buffer, m_memory);
     m_buffer = VK_NULL_HANDLE;
     m_memory = VK_NULL_HANDLE;
+#endif
 }   // destroyVertexIndexBuffer
 
 // ----------------------------------------------------------------------------

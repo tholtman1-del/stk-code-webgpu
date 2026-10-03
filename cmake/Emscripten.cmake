@@ -33,6 +33,13 @@ set(STK_WEB_CFLAGS "-pthread -msimd128 -fwasm-exceptions ${STK_WEB_PORTS_STR} --
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${STK_WEB_CFLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${STK_WEB_CFLAGS}")
 
+# FindThreads and find_library(pthread) do not detect Emscripten's -pthread
+set(CMAKE_THREAD_LIBS_INIT "-pthread")
+set(CMAKE_HAVE_THREADS_LIBRARY 1)
+set(CMAKE_USE_PTHREADS_INIT 1)
+set(Threads_FOUND TRUE)
+set(PTHREAD_LIBRARY "-pthread" CACHE STRING "" FORCE)
+
 # Point the find_* calls at the ports. The "library" is the port flag, which
 # emcc resolves at link time.
 set(EM_SYSROOT_INCLUDE "${EMSCRIPTEN_SYSROOT}/include")

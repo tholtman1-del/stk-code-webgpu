@@ -11,7 +11,13 @@ tools/webgpu/setup_toolchain.sh     # emsdk, glslang, spirv-tools, naga
 source ../emsdk/emsdk_env.sh
 tools/webgpu/build_deps.sh          # Emscripten ports + mbedtls for wasm
 python3 tools/webgpu/compile_shaders.py   # GLSL -> WGSL (output is committed)
+emcmake cmake -S . -B build-web/stk -G Ninja
+cmake --build build-web/stk --target graphics_engine
 ```
+
+`build_deps.sh` clones the Emscripten ports' sources with git
+(`fetch_ports.py`) instead of letting emcc download GitHub archives, which
+are blocked in cloud sessions.
 
 ## Architecture
 
@@ -38,14 +44,14 @@ python3 tools/webgpu/compile_shaders.py   # GLSL -> WGSL (output is committed)
 - Shader conversion for all 27 GE shaders (both variants)
 - Game code decoupled from Vulkan types
 - Draft WebGPU driver: surface, samplers, textures, 2D/GUI renderer
-
-Nothing has been compiled with Emscripten yet.
+- Emscripten configure works; `graphics_engine` compiles for wasm. Its
+  Emscripten source list is the shared GE files plus `ge_wgpu_*`; the
+  compressors and culling tool are Vulkan-only for now.
+  `GESPMBuffer::createVertexIndexBuffer()` is a no-op without Vulkan until
+  WebGPU mesh buffers exist (item 7).
 
 ## Next
 
-1. `lib/graphics_engine/CMakeLists.txt`: in Emscripten builds use the
-   `ge_wgpu_*` sources instead of `ge_vulkan_*`, `gl.c`, `vulkan.c`,
-   `ge_gl_texture.cpp` and `ge_dx9_texture.cpp`
 2. `CIrrDeviceSDL.cpp`: `EDT_WEBGPU` case for window, driver and GE scene
 3. `src/online/http_request_fetch.cpp` (emscripten_fetch, synchronous on the
    request thread)

@@ -1,8 +1,9 @@
 #include "ge_material_manager.hpp"
 
 #include "ge_main.hpp"
-#include "ge_vulkan_driver.hpp"
 
+#include "IFileSystem.h"
+#include "IXMLReader.h"
 #include "vector3d.h"
 
 #include <algorithm>
@@ -51,15 +52,15 @@ std::unordered_map<std::string, std::function<void(uint32_t*, void**)> >
 // ============================================================================
 }   // GEMaterialManager
 // ----------------------------------------------------------------------------
-std::string readString(io::IXMLReaderUTF8* xml)
+std::string readString(irr::io::IXMLReaderUTF8* xml)
 {
-    if (xml->read() && xml->getNodeType() == io::EXN_TEXT)
+    if (xml->read() && xml->getNodeType() == irr::io::EXN_TEXT)
         return xml->getNodeData();
     return "";
 }   // readString
 
 // ----------------------------------------------------------------------------
-bool readBool(io::IXMLReaderUTF8* xml)
+bool readBool(irr::io::IXMLReaderUTF8* xml)
 {
     return readString(xml) == "true";
 }   // readBool
@@ -81,7 +82,7 @@ void GEMaterialManager::init()
     g_mat_map.clear();
     g_mat_id_map.clear();
     g_id_mat_map.clear();
-    io::IXMLReaderUTF8* xml =
+    irr::io::IXMLReaderUTF8* xml =
         getDriver()->getFileSystem()->createXMLReaderUTF8(
         (GE::getShaderFolder() + "shader_settings.xml").c_str());
     if (!xml)
@@ -89,20 +90,20 @@ void GEMaterialManager::init()
 
     while (xml->read())
     {
-        if (xml->getNodeType() == io::EXN_ELEMENT &&
+        if (xml->getNodeType() == irr::io::EXN_ELEMENT &&
             !strcmp(xml->getNodeName(), "setting"))
         {
             GEMaterial settings;
             std::string name = xml->getAttributeValue("name");
             while (xml->read())
             {
-                if (xml->getNodeType() == io::EXN_ELEMENT)
+                if (xml->getNodeType() == irr::io::EXN_ELEMENT)
                 {
                     if (!strcmp(xml->getNodeName(), "properties"))
                     {
                         while (xml->read())
                         {
-                            if (xml->getNodeType() == io::EXN_ELEMENT)
+                            if (xml->getNodeType() == irr::io::EXN_ELEMENT)
                             {
                                 const char* node_name = xml->getNodeName();
                                 if (!strcmp(node_name, "depth-write"))
@@ -127,7 +128,7 @@ void GEMaterialManager::init()
                                     }
                                 }
                             }
-                            else if (xml->getNodeType() == io::EXN_ELEMENT_END &&
+                            else if (xml->getNodeType() == irr::io::EXN_ELEMENT_END &&
                                 !strcmp(xml->getNodeName(), "properties"))
                                 break;
                         }
@@ -136,7 +137,7 @@ void GEMaterialManager::init()
                     {
                         while (xml->read())
                         {
-                            if (xml->getNodeType() == io::EXN_ELEMENT)
+                            if (xml->getNodeType() == irr::io::EXN_ELEMENT)
                             {
                                 const char* node_name = xml->getNodeName();
                                 if (!strcmp(node_name, "vertex"))
@@ -148,13 +149,13 @@ void GEMaterialManager::init()
                                 else if (!strcmp(node_name, "skinning-vertex"))
                                     settings.m_skinning_vertex_shader = readString(xml);
                             }
-                            else if (xml->getNodeType() == io::EXN_ELEMENT_END &&
+                            else if (xml->getNodeType() == irr::io::EXN_ELEMENT_END &&
                                 !strcmp(xml->getNodeName(), "shaders"))
                                 break;
                         }
                     }
                 }
-                else if (xml->getNodeType() == io::EXN_ELEMENT_END &&
+                else if (xml->getNodeType() == irr::io::EXN_ELEMENT_END &&
                     !strcmp(xml->getNodeName(), "setting"))
                     break;
             }
@@ -194,7 +195,7 @@ void GEMaterialManager::init()
                     char msg[50] = {};
                     snprintf(msg, 50, "Too many materials which exceeded %u.",
                         irr::video::EMT_MATERIAL_COUNT);
-                    os::Printer::log("GEMaterialManager", msg);
+                    irr::os::Printer::log("GEMaterialManager", msg);
                     xml->drop();
                     return;
                 }

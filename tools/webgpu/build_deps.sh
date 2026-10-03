@@ -14,7 +14,9 @@ PREFIX="$DEPS/prefix"
 mkdir -p "$SRC" "$PREFIX"
 FLAGS="-pthread -O3 -msimd128"
 
-# Emscripten ports, multithreaded variants
+# Emscripten ports, multithreaded variants. Their sources are cloned with git
+# because GitHub archive downloads are not reachable from every environment.
+python3 "$ROOT/tools/webgpu/fetch_ports.py"
 embuilder build sdl2-mt zlib libpng-mt libjpeg freetype harfbuzz-mt \
     ogg vorbis > /dev/null
 
@@ -23,7 +25,9 @@ MBEDTLS_VER=3.6.4
 if [ ! -f "$PREFIX/lib/libmbedcrypto.a" ]; then
     cd "$SRC"
     if [ ! -d "mbedtls-$MBEDTLS_VER" ]; then
-        curl -sL "https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-$MBEDTLS_VER/mbedtls-$MBEDTLS_VER.tar.bz2" | tar xj
+        git -c advice.detachedHead=false clone -q --depth 1 --recurse-submodules \
+            --shallow-submodules --branch "mbedtls-$MBEDTLS_VER" \
+            https://github.com/Mbed-TLS/mbedtls "mbedtls-$MBEDTLS_VER"
     fi
     emcmake cmake -S "mbedtls-$MBEDTLS_VER" -B "mbedtls-build" -G Ninja \
         -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PREFIX" \

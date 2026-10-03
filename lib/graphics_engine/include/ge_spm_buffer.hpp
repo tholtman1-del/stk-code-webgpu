@@ -5,9 +5,12 @@
 #include <cstddef>
 #include <vector>
 #include "IMeshBuffer.h"
+#include "IrrCompileConfig.h"
 
+#ifdef _IRR_COMPILE_WITH_VULKAN_
 #include "ge_vma.hpp"
 #include "vulkan_wrapper.h"
+#endif
 
 namespace GE
 {
@@ -29,9 +32,11 @@ private:
 
     size_t m_skinning_vbo_offset;
 
+#ifdef _IRR_COMPILE_WITH_VULKAN_
     VkBuffer m_buffer;
 
     VmaAllocation m_memory;
+#endif
 
     bool m_has_skinning;
 public:
@@ -41,8 +46,10 @@ public:
         m_vbo_offset = 0;
         m_ibo_offset = 0;
         m_skinning_vbo_offset = 0;
+#ifdef _IRR_COMPILE_WITH_VULKAN_
         m_buffer = VK_NULL_HANDLE;
         m_memory = VK_NULL_HANDLE;
+#endif
         m_has_skinning = false;
     }
     // ------------------------------------------------------------------------
@@ -177,6 +184,7 @@ public:
     bool hasSkinning() const                         { return m_has_skinning; }
     // ------------------------------------------------------------------------
     void setHasSkinning(bool val)                     { m_has_skinning = val; }
+#ifdef _IRR_COMPILE_WITH_VULKAN_
     // ------------------------------------------------------------------------
     virtual void bindVertexIndexBuffer(VkCommandBuffer cmd)
     {
@@ -196,6 +204,7 @@ public:
         vkCmdBindIndexBuffer(cmd, buffer, getIBOOffset(),
             VK_INDEX_TYPE_UINT16);
     }
+#endif
     // ------------------------------------------------------------------------
     virtual void createVertexIndexBuffer();
     // ------------------------------------------------------------------------
@@ -205,8 +214,10 @@ public:
                                                          { return m_vertices; }
     // ------------------------------------------------------------------------
     std::vector<irr::u16>& getIndicesVector()             { return m_indices; }
+#ifdef _IRR_COMPILE_WITH_VULKAN_
     // ------------------------------------------------------------------------
     virtual VkBuffer getVkBuffer() const                   { return m_buffer; }
+#endif
 };
 
 } // end namespace GE
