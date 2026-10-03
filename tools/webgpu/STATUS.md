@@ -155,6 +155,9 @@ Cloud session notes:
   axis changes again (real sticks pass intermediate values). Joystick
   events are allowed without canvas focus. `--race-now` only takes input
   from the keyboard (ASSIGN mode), as in native builds.
+- Split screen tested (keyboard + fake gamepad, kart selection, race
+  setup, track selection): hacienda (forward) and zengarden (deferred with
+  SSR/HiZ) render both viewports. Story mode's intro cutscene renders.
 - Browser logs go to `console.log/warn/error` without terminal colour codes.
   Exceptions in a frame are caught like `main()` does and stop the game;
   the page shows `Module.onGameStopped` (also after quitting).
@@ -162,8 +165,8 @@ Cloud session notes:
 ## Next
 
 0. More testing on real GPUs and browsers (tested on the developer's Mac
-   by the user: works): Safari, Firefox, Windows/Linux GPUs; split screen,
-   real gamepads; a real static host deployment.
+   by the user: works): Safari, Firefox, Windows/Linux GPUs, real
+   gamepads; a real static host deployment.
 
 1. Texture compression: BC3 (GECompressorS3TCBC3 on the loader threads)
    works but is off by default in the browser (`enable_texture_compression`):
