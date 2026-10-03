@@ -37,7 +37,8 @@ var u_hiz_depth_image: texture_2d<f32>;
 @group(1) @binding(0) 
 var<uniform> u_camera: CameraBuffer;
 var<private> f_uv_1: vec2<f32>;
-var<immediate> u_push_constants: Constants;
+@group(1) @binding(4)
+var<uniform> u_push_constants: Constants;
 var<private> o_displace_mask: vec2<f32>;
 var<private> o_displace_ssr: vec4<f32>;
 var<private> f_world_position_1: vec4<f32>;

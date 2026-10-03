@@ -49,7 +49,8 @@ struct VertexOutput {
     @location(7) member_8: vec3<f32>,
 }
 
-var<immediate> u_push_constants: Constants;
+@group(1) @binding(4)
+var<uniform> u_push_constants: Constants;
 var<private> v_position_1: vec3<f32>;
 @group(1) @binding(1) 
 var<storage> u_object_buffer: ObjectBuffer;

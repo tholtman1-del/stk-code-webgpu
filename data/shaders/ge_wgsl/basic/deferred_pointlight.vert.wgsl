@@ -48,7 +48,8 @@ struct VertexOutput {
 
 var<private> light_idx: i32;
 var<private> gl_InstanceIndex_1: i32;
-var<immediate> u_push_constants: Constants;
+@group(1) @binding(4)
+var<uniform> u_push_constants: Constants;
 @group(1) @binding(3) 
 var<uniform> u_global_light: GlobalLightBuffer;
 @group(1) @binding(0) 

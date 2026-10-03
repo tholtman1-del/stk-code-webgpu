@@ -12,6 +12,7 @@
 
 #include <array>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -20,6 +21,7 @@ using namespace video;
 
 namespace GE
 {
+class GEWGPUSkyBoxRenderer;
 class GEWGPUTexture;
 
 /** GE renderer on top of WebGPU, used by the browser (Emscripten) build.
@@ -299,6 +301,12 @@ public:
     // ------------------------------------------------------------------------
     bool hasFeature(wgpu::FeatureName feature) const
                                        { return m_device.HasFeature(feature); }
+    // ------------------------------------------------------------------------
+    /** Quad in the mesh cache used by billboards and particles. */
+    scene::IMesh* getBillboardQuad() const          { return m_billboard_quad; }
+    // ------------------------------------------------------------------------
+    GEWGPUSkyBoxRenderer* getSkyBoxRenderer() const
+                                           { return m_skybox_renderer.get(); }
 private:
     // ------------------------------------------------------------------------
     virtual video::ITexture* createDeviceDependentTexture(IImage* surface,
@@ -329,6 +337,10 @@ private:
     void configureSurface();
     // ------------------------------------------------------------------------
     void runPendingTasks();
+    // ------------------------------------------------------------------------
+    void createBillboardQuad();
+    // ------------------------------------------------------------------------
+    const wgpu::TextureView& getDepthView(const core::dimension2du& size);
 
     SIrrlichtCreationParameters m_params;
     SMaterial Material;
@@ -348,6 +360,10 @@ private:
     core::rect<s32> m_clip;
     video::ITexture* m_white_texture;
     video::ITexture* m_transparent_texture;
+    scene::IMesh* m_billboard_quad;
+    std::unique_ptr<GEWGPUSkyBoxRenderer> m_skybox_renderer;
+    wgpu::Texture m_depth_texture;
+    wgpu::TextureView m_depth_view;
 
     struct PendingTask
     {

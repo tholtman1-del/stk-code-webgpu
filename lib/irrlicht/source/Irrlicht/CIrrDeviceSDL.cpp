@@ -32,6 +32,7 @@
 #ifdef _IRR_COMPILE_WITH_WEBGPU_
 // ge_vulkan_driver.hpp is empty without Vulkan, so GEDriver comes from here
 #include "ge_driver.hpp"
+#include "ge_wgpu_scene_manager.hpp"
 #endif
 
 extern bool GLContextDebugBit;
@@ -205,8 +206,8 @@ CIrrDeviceSDL::CIrrDeviceSDL(const SIrrlichtCreationParameters& param)
 
 	if (VideoDriver)
 	{
-		if (CreationParams.DriverType == video::EDT_VULKAN)
-			createGUIAndVulkanScene();
+		if (GE::isGEDriver(CreationParams.DriverType))
+			createGUIAndGEScene();
 		else
 			createGUIAndScene();
 	}
@@ -1710,23 +1711,21 @@ s32 CIrrDeviceSDL::getRightPadding()
 }
 
 
-void CIrrDeviceSDL::createGUIAndVulkanScene()
+void CIrrDeviceSDL::createGUIAndGEScene()
 {
-#ifdef _IRR_COMPILE_WITH_WEBGPU_
-	// Never reached (EDT_VULKAN cannot be created in WebGPU builds), and
-	// GEVulkanSceneManager is not compiled for Emscripten
-	createGUIAndScene();
-#else
 	#ifdef _IRR_COMPILE_WITH_GUI_
 	// create gui environment
 	GUIEnvironment = gui::createGUIEnvironment(FileSystem, VideoDriver, Operator);
 	#endif
 
 	// create Scene manager
+#ifdef _IRR_COMPILE_WITH_WEBGPU_
+	SceneManager = new GE::GEWGPUSceneManager(VideoDriver, FileSystem, CursorControl, GUIEnvironment);
+#else
 	SceneManager = new GE::GEVulkanSceneManager(VideoDriver, FileSystem, CursorControl, GUIEnvironment);
+#endif
 
 	setEventReceiver(UserReceiver);
-#endif
 }
 
 

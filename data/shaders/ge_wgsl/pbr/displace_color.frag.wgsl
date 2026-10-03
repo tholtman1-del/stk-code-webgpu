@@ -15,7 +15,8 @@ struct CameraBuffer {
 }
 
 var<private> gl_FragCoord_1: vec4<f32>;
-var<immediate> u_push_constants: Constants;
+@group(1) @binding(4)
+var<uniform> u_push_constants: Constants;
 @group(0) @binding(16) 
 var u_displace_mask_sampler: sampler;
 @group(0) @binding(0) 

@@ -2,16 +2,18 @@
 
 #include "ge_main.hpp"
 #include "ge_spm_buffer.hpp"
-#include "ge_vulkan_camera_scene_node.hpp"
 
+#include "ICameraSceneNode.h"
+#include "SViewFrustum.h"
 #include "ISceneNode.h"
 
 namespace GE
 {
 // ----------------------------------------------------------------------------
-void GECullingTool::init(GEVulkanCameraSceneNode* cam)
+void GECullingTool::init(irr::scene::ICameraSceneNode* cam)
 {
-    mathPlaneFrustumf(&m_frustum[0].X, cam->getPVM());
+    mathPlaneFrustumf(&m_frustum[0].X,
+        cam->getProjectionMatrix() * cam->getViewMatrix());
     m_cam_bbox = cam->getViewFrustum()->getBoundingBox();
 }   // init
 

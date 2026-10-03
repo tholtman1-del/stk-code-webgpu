@@ -61,9 +61,19 @@ def compile_one(src, variant, pbr, verbose):
             capture_output=True, text=True)
         if r.returncode != 0:
             return False, "naga: " + (r.stdout + r.stderr).strip()
+        text = push_constants_to_uniform(wgsl.read_text())
         if stage == "vert":
-            wgsl.write_text(unpack_packed_inputs(wgsl.read_text()))
+            text = unpack_packed_inputs(text)
+        wgsl.write_text(text)
     return True, ""
+
+# WebGPU has no push constants (naga emits var<immediate>). They become a
+# uniform buffer with a dynamic offset, filled by the driver per pipeline.
+PUSH_CONSTANTS_BINDING = "@group(1) @binding(4)"
+
+def push_constants_to_uniform(src):
+    return re.sub(r"var<immediate> (\w+): (\w+);",
+        PUSH_CONSTANTS_BINDING + r"\nvar<uniform> \1: \2;", src)
 
 # Normals and tangents are A2B10G10R10 snorm in S3DVertexSkinnedMesh, which
 # WebGPU has no vertex format for. Those inputs are read as u32 and unpacked.

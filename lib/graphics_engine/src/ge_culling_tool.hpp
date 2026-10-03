@@ -7,13 +7,12 @@
 
 namespace irr
 {
-    namespace scene { class ISceneNode; }
+    namespace scene { class ICameraSceneNode; class ISceneNode; }
 }
 
 namespace GE
 {
 class GESPMBuffer;
-class GEVulkanCameraSceneNode;
 
 class GECullingTool
 {
@@ -23,7 +22,7 @@ private:
     irr::core::aabbox3df m_cam_bbox;
 public:
     // ------------------------------------------------------------------------
-    void init(GEVulkanCameraSceneNode* cam);
+    void init(irr::scene::ICameraSceneNode* cam);
     // ------------------------------------------------------------------------
     bool isCulled(irr::core::aabbox3df& bb);
     // ------------------------------------------------------------------------

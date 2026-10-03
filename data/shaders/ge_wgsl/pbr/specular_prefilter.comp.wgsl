@@ -6,7 +6,8 @@ struct PushConstants {
 }
 
 var<private> gl_GlobalInvocationID_1: vec3<u32>;
-var<immediate> pc: PushConstants;
+@group(1) @binding(4)
+var<uniform> pc: PushConstants;
 @group(0) @binding(16) 
 var uSkybox_sampler: sampler;
 @group(0) @binding(0) 

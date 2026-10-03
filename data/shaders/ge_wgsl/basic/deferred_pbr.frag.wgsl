@@ -61,7 +61,8 @@ var u_color_image: texture_2d<f32>;
 var u_normal_sampler: sampler;
 @group(0) @binding(1) 
 var u_normal_image: texture_2d<f32>;
-var<immediate> u_push_constants: Constants;
+@group(1) @binding(4)
+var<uniform> u_push_constants: Constants;
 var<private> o_color: vec4<f32>;
 
 fn main_1() {

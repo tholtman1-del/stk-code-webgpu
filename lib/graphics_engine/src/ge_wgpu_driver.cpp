@@ -4,10 +4,18 @@
 
 #include "ge_main.hpp"
 #include "ge_material_manager.hpp"
+#include "ge_spm.hpp"
 #include "ge_spm_buffer.hpp"
 #include "ge_wgpu_2d_renderer.hpp"
+#include "ge_wgpu_camera_scene_node.hpp"
+#include "ge_wgpu_draw_call.hpp"
+#include "ge_wgpu_dynamic_spm_buffer.hpp"
+#include "ge_wgpu_mesh_cache.hpp"
+#include "ge_wgpu_scene_manager.hpp"
 #include "ge_wgpu_shader_manager.hpp"
+#include "ge_wgpu_skybox_renderer.hpp"
 #include "ge_wgpu_texture.hpp"
+#include "mini_glm.hpp"
 
 #include "IrrlichtDevice.h"
 #include "../source/Irrlicht/os.h"
@@ -16,6 +24,7 @@
 #include <emscripten/threading.h>
 
 #include <algorithm>
+#include <sstream>
 #include <stdexcept>
 
 namespace GE
@@ -34,8 +43,7 @@ GEWGPUDriver* getWGPUDriver()
 // ----------------------------------------------------------------------------
 irr::scene::IMeshBuffer* createDynamicSPMBuffer()
 {
-    // CPU-side only until WebGPU mesh buffers exist
-    return new GESPMBuffer();
+    return new GEWGPUDynamicSPMBuffer();
 }   // createDynamicSPMBuffer
 
 // ----------------------------------------------------------------------------
@@ -45,7 +53,7 @@ GEWGPUDriver::GEWGPUDriver(const SIrrlichtCreationParameters& params,
             : GEDriver(io, params.WindowSize), m_params(params),
               m_irrlicht_device(device), m_mesh_sampler(GVS_3D_MESH_MIPMAP_16),
               m_max_texture_size(8192), m_white_texture(NULL),
-              m_transparent_texture(NULL)
+              m_transparent_texture(NULL), m_billboard_quad(NULL)
 {
     // Created by the page (asynchronously) before main() was called
     m_device = wgpu::Device::Acquire(emscripten_webgpu_get_device());
@@ -80,6 +88,7 @@ GEWGPUDriver::GEWGPUDriver(const SIrrlichtCreationParameters& params,
     createUnicolorTextures();
     GEWGPU2dRenderer::init(this);
     GEMaterialManager::init();
+    m_skybox_renderer.reset(new GEWGPUSkyBoxRenderer());
 }   // GEWGPUDriver
 
 // ----------------------------------------------------------------------------
@@ -101,6 +110,14 @@ void GEWGPUDriver::destroyDriver()
         m_transparent_texture = NULL;
     }
     runPendingTasks();
+    if (m_billboard_quad && m_irrlicht_device->getSceneManager())
+    {
+        m_irrlicht_device->getSceneManager()->getMeshCache()
+            ->removeMesh(m_billboard_quad);
+    }
+    m_billboard_quad = NULL;
+    m_skybox_renderer.reset();
+    GEWGPUDrawCall::destroyShared();
     GEWGPU2dRenderer::destroy();
     GEWGPUShaderManager::destroy();
     for (wgpu::Sampler& s : m_samplers)
@@ -246,11 +263,17 @@ void GEWGPUDriver::onTextureDestroyed(const GEWGPUTexture* texture)
 {
     cancelTasks(texture);
     if (emscripten_is_main_browser_thread())
+    {
         GEWGPU2dRenderer::onTextureDestroyed(texture);
+        GEWGPUDrawCall::onTextureDestroyed();
+    }
     else
     {
         runOnMainThread([texture]()
-            { GEWGPU2dRenderer::onTextureDestroyed(texture); });
+            {
+                GEWGPU2dRenderer::onTextureDestroyed(texture);
+                GEWGPUDrawCall::onTextureDestroyed();
+            });
     }
 }   // onTextureDestroyed
 
@@ -269,7 +292,12 @@ bool GEWGPUDriver::beginScene(bool backBuffer, bool zBuffer, SColor color,
                               core::rect<s32>* sourceRect)
 {
     runPendingTasks();
+    // PBR (deferred lighting, IBL, shadows) is not implemented yet
+    getGEConfig()->m_pbr = false;
     GEMaterialManager::update();
+    if (!m_billboard_quad && m_irrlicht_device->getSceneManager() &&
+        m_irrlicht_device->getSceneManager()->getMeshCache())
+        createBillboardQuad();
     if (!video::CNullDriver::beginScene(backBuffer, zBuffer, color, videoData,
         sourceRect))
         return false;
@@ -303,6 +331,42 @@ bool GEWGPUDriver::endScene()
     wgpu::RenderPassDescriptor pass_desc;
     pass_desc.colorAttachmentCount = 1;
     pass_desc.colorAttachments = &color;
+
+    // 3D of every camera drawn this frame (split screen has several), then
+    // the GUI in a pass without depth
+    GEWGPUSceneManager* sm = dynamic_cast<GEWGPUSceneManager*>(
+        m_irrlicht_device->getSceneManager());
+    std::vector<GEWGPUDrawCall*> draw_calls;
+    if (sm)
+    {
+        for (auto& p : sm->getDrawCalls())
+        {
+            if (p.second->getCamera())
+                draw_calls.push_back(p.second.get());
+        }
+    }
+    if (!draw_calls.empty())
+    {
+        for (GEWGPUDrawCall* dc : draw_calls)
+            dc->upload();
+        wgpu::RenderPassDepthStencilAttachment depth;
+        depth.view = getDepthView(ScreenSize);
+        depth.depthLoadOp = wgpu::LoadOp::Clear;
+        depth.depthStoreOp = wgpu::StoreOp::Discard;
+        depth.depthClearValue = 1.0f;
+        pass_desc.depthStencilAttachment = &depth;
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&pass_desc);
+        for (GEWGPUDrawCall* dc : draw_calls)
+        {
+            dc->render(pass, m_surface_format);
+            PrimitivesDrawn += dc->getPolyCount();
+            dc->reset();
+        }
+        pass.End();
+        color.loadOp = wgpu::LoadOp::Load;
+        pass_desc.depthStencilAttachment = NULL;
+    }
+
     wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&pass_desc);
     GEWGPU2dRenderer::render(pass, m_surface_format, ScreenSize);
     pass.End();
@@ -330,8 +394,75 @@ void GEWGPUDriver::setViewPort(const core::rect<s32>& area)
         getCurrentRenderTargetSize().Height);
     vp.clipAgainst(rendert);
     if (vp.getHeight() > 0 && vp.getWidth() > 0)
+    {
         ViewPort = vp;
+        // The 3D of a camera is drawn in endScene() with the viewport that
+        // was set while it was active
+        scene::ISceneManager* sm = m_irrlicht_device->getSceneManager();
+        GEWGPUCameraSceneNode* cam = sm ?
+            dynamic_cast<GEWGPUCameraSceneNode*>(sm->getActiveCamera()) : NULL;
+        if (cam)
+            cam->setViewPort(area);
+    }
 }   // setViewPort
+
+// ----------------------------------------------------------------------------
+const wgpu::TextureView& GEWGPUDriver::getDepthView(
+                                               const core::dimension2du& size)
+{
+    if (!m_depth_texture || m_depth_texture.GetWidth() != size.Width ||
+        m_depth_texture.GetHeight() != size.Height)
+    {
+        wgpu::TextureDescriptor desc;
+        desc.label = "depth";
+        desc.size = { size.Width, size.Height, 1 };
+        desc.format = wgpu::TextureFormat::Depth32Float;
+        desc.usage = wgpu::TextureUsage::RenderAttachment;
+        m_depth_texture = m_device.CreateTexture(&desc);
+        m_depth_view = m_depth_texture.CreateView();
+    }
+    return m_depth_view;
+}   // getDepthView
+
+// ----------------------------------------------------------------------------
+void GEWGPUDriver::createBillboardQuad()
+{
+    // Same quad as GEVulkanDriver::createBillboardQuad
+    GESPM* quad = new GESPM();
+    GESPMBuffer* buffer = new GESPMBuffer();
+    const short one_hf = 15360;
+    video::S3DVertexSkinnedMesh sp;
+    sp.m_position = core::vector3df(1, -1, 0);
+    sp.m_normal = MiniGLM::compressVector3(core::vector3df(0, 0, 1));
+    sp.m_color = video::SColor((uint32_t)-1);
+    sp.m_all_uvs[0] = one_hf;
+    sp.m_all_uvs[1] = one_hf;
+    buffer->getVerticesVector().push_back(sp);
+    sp.m_position = core::vector3df(1, 1, 0);
+    sp.m_all_uvs[0] = one_hf;
+    sp.m_all_uvs[1] = 0;
+    buffer->getVerticesVector().push_back(sp);
+    sp.m_position = core::vector3df(-1, 1, 0);
+    sp.m_all_uvs[0] = 0;
+    sp.m_all_uvs[1] = 0;
+    buffer->getVerticesVector().push_back(sp);
+    sp.m_position = core::vector3df(-1, -1, 0);
+    sp.m_all_uvs[0] = 0;
+    sp.m_all_uvs[1] = one_hf;
+    buffer->getVerticesVector().push_back(sp);
+    for (uint16_t i : { 2, 1, 0, 2, 0, 3 })
+        buffer->getIndicesVector().push_back(i);
+    buffer->recalculateBoundingBox();
+    quad->addMeshBuffer(buffer);
+    quad->finalize();
+
+    std::stringstream oss;
+    oss << (uint64_t)quad;
+    m_irrlicht_device->getSceneManager()->getMeshCache()->addMesh(
+        oss.str().c_str(), quad);
+    quad->drop();
+    m_billboard_quad = quad;
+}   // createBillboardQuad
 
 // ----------------------------------------------------------------------------
 void GEWGPUDriver::updateDriver(bool scale_changed, bool pbr_changed,

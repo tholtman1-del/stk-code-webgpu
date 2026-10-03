@@ -5,7 +5,8 @@ struct PushConstants {
 var<private> gl_GlobalInvocationID_1: vec3<u32>;
 @group(0) @binding(1) 
 var u_hiz_depth: texture_storage_2d<r32float,write>;
-var<immediate> pc: PushConstants;
+@group(1) @binding(4)
+var<uniform> pc: PushConstants;
 @group(0) @binding(16) 
 var u_depth_sampler: sampler;
 @group(0) @binding(0) 

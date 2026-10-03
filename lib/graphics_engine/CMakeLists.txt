@@ -66,12 +66,16 @@ endif()
 
 set(GE_COMMON_SOURCES
     src/ge_compressor_s3tc_bc3.cpp
+    src/ge_culling_tool.cpp
     src/ge_main.cpp
     src/ge_material_manager.cpp
+    src/ge_object_data.cpp
     src/ge_occlusion_culling.cpp
     src/ge_texture.cpp
     src/ge_spm.cpp
     src/ge_spm_buffer.cpp
+    src/ge_vulkan_animated_mesh_scene_node.cpp
+    src/ge_vulkan_mesh_scene_node.cpp
 )
 
 if(EMSCRIPTEN)
@@ -82,8 +86,14 @@ set(GE_SOURCES
     ${GE_COMMON_SOURCES}
     src/gl.c
     src/ge_wgpu_2d_renderer.cpp
+    src/ge_wgpu_camera_scene_node.cpp
+    src/ge_wgpu_draw_call.cpp
     src/ge_wgpu_driver.cpp
+    src/ge_wgpu_dynamic_spm_buffer.cpp
+    src/ge_wgpu_mesh_cache.cpp
+    src/ge_wgpu_scene_manager.cpp
     src/ge_wgpu_shader_manager.cpp
+    src/ge_wgpu_skybox_renderer.cpp
     src/ge_wgpu_texture.cpp
 )
 else()
@@ -92,13 +102,11 @@ set(GE_SOURCES
     src/gl.c
     src/ge_compressor_astc_4x4.cpp
     src/ge_compressor_bptc_bc7.cpp
-    src/ge_culling_tool.cpp
     src/ge_dx9_texture.cpp
     src/ge_gl_texture.cpp
     src/ge_vma.cpp
     src/ge_vulkan_2d_renderer.cpp
     src/ge_vulkan_array_texture.cpp
-    src/ge_vulkan_animated_mesh_scene_node.cpp
     src/ge_vulkan_attachment_texture.cpp
     src/ge_vulkan_billboard_buffer.cpp
     src/ge_vulkan_camera_scene_node.cpp
@@ -114,7 +122,6 @@ set(GE_SOURCES
     src/ge_vulkan_hiz_depth.cpp
     src/ge_vulkan_light_handler.cpp
     src/ge_vulkan_mesh_cache.cpp
-    src/ge_vulkan_mesh_scene_node.cpp
     src/ge_vulkan_scene_manager.cpp
     src/ge_vulkan_shader_manager.cpp
     src/ge_vulkan_skybox_renderer.cpp
