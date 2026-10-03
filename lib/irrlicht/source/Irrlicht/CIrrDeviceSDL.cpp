@@ -207,14 +207,6 @@ CIrrDeviceSDL::CIrrDeviceSDL(const SIrrlichtCreationParameters& param)
 	{
 		if (CreationParams.DriverType == video::EDT_VULKAN)
 			createGUIAndVulkanScene();
-#ifdef _IRR_COMPILE_WITH_WEBGPU_
-		// GEVulkanSceneManager is Vulkan-only (not built for Emscripten),
-		// Irrlicht's CSceneManager is enough for the 2D menus.
-		// TODO (item 7): a GE scene manager for WebGPU (SPM mesh nodes,
-		// GE camera, draw calls) once 3D rendering exists.
-		else if (CreationParams.DriverType == video::EDT_WEBGPU)
-			createGUIAndScene();
-#endif
 		else
 			createGUIAndScene();
 	}
