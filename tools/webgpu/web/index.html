@@ -310,7 +310,6 @@ async function mountGameData(mod) {
   const { manifest, blob } = await gameData;
   setStatus('Unpacking game data…');
   const { FS } = mod;
-  for (const dir of manifest.dirs || []) FS.mkdirTree(`${DATA_ROOT}/${dir}`);
   const dirs = new Set();
   for (const [path, offset, size] of manifest.files) {
     const full = `${DATA_ROOT}/${path}`;

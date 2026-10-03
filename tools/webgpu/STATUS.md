@@ -12,12 +12,22 @@ source ../emsdk/emsdk_env.sh
 tools/webgpu/build_deps.sh          # Emscripten ports + mbedtls for wasm
 python3 tools/webgpu/compile_shaders.py   # GLSL -> WGSL (output is committed)
 emcmake cmake -S . -B build-web/stk -G Ninja
-cmake --build build-web/stk --target graphics_engine
+cmake --build build-web/stk --target supertuxkart  # -> build-web/stk/bin
+tools/webgpu/fetch_assets.sh        # stk-assets from SVN into ../stk-assets
+python3 tools/webgpu/package_data.py      # stk-data.bin/.json into bin/
+python3 tools/webgpu/web/serve.py         # http://localhost:8080/
+node tools/webgpu/web/boot_test.mjs       # headless boot + screenshot
 ```
 
-`build_deps.sh` clones the Emscripten ports' sources with git
-(`fetch_ports.py`) instead of letting emcc download GitHub archives, which
-are blocked in cloud sessions.
+Cloud session notes:
+- `build_deps.sh` clones the Emscripten ports' sources with git
+  (`fetch_ports.py`) because GitHub archive downloads are blocked.
+- svn ignores `HTTPS_PROXY`; set the proxy in `~/.subversion/servers`
+  (see `fetch_assets.sh`).
+- `boot_test.mjs` uses SwiftShader WebGPU plus ANGLE/SwiftShader GL; without
+  the GL flags Chromium loses the device on the first canvas present.
+- First-run clicks to reach the main menu at 1280x720: No (457,540),
+  OK (760,630), OK (1075,620), No (510,490).
 
 ## Architecture
 
@@ -61,13 +71,22 @@ are blocked in cloud sessions.
   stops; exceptions in a frame are no longer caught by `main()`.
 - `tools/webgpu/web/`: `index.html` loader (adapter/device, limits,
   device-loss and environment errors, wasm download progress, IDBFS at
-  `/persistent`, `mountGameData()` hook) and `serve.py` (COOP/COEP).
+  `/persistent`) and `serve.py` (COOP/COEP).
+- The `supertuxkart` target links (10 MB wasm). glad's `gl.c` is linked so
+  the OpenGL code paths resolve; they never run without the OpenGL driver.
+  DNS queries are skipped in the browser.
+- Game data: `package_data.py` packs `data/` and all official assets
+  (762 MB) into one blob, which the page downloads in parallel with the
+  engine and unpacks into MEMFS at `/stk` before `main()`.
+- Boots to the main menu (2D GUI on WebGPU, mouse input, first-run
+  dialogs, player creation, config saved to IDBFS).
 
 ## Next
 
-1. Package game data (`mountGameData()` in `index.html`), link the
-   `supertuxkart` target, boot to the main menu
-2. 3D: mesh buffers (`GESPMBuffer`), a WebGPU GE scene manager, draw calls,
-   render targets, then deferred PBR, skybox, IBL, shadows
-3. Performance: async texture decoding, compressed textures, asset streaming,
-   HiDPI
+1. 3D: mesh buffers (`GESPMBuffer`, `createDynamicSPMBuffer()` is CPU-only),
+   a WebGPU GE scene manager, draw calls, render targets, then deferred PBR,
+   skybox, IBL, shadows
+2. Performance: async texture decoding, compressed textures, asset streaming
+   (the whole 762 MB package is downloaded and held in memory), HiDPI
+3. Smaller issues: STK's log colour codes show up in the browser console;
+   C++ exceptions inside a frame are not caught (`MainLoop::runFrame()`)

@@ -5,7 +5,7 @@ Usage:
     python3 tools/webgpu/web/serve.py [BUILD_DIR] [--port 8080] [--bind 127.0.0.1]
 
 BUILD_DIR is the directory holding supertuxkart.js and supertuxkart.wasm
-(default: build-web/stk). "/" serves the index.html next to this script and
+(default: build-web/stk/bin). "/" serves the index.html next to this script and
 every other path is served from BUILD_DIR. Open http://localhost:8080/ in a
 browser with WebGPU; extra game arguments can be passed as
 http://localhost:8080/?arg=--log=0&arg=--no-start-screen
@@ -55,9 +55,9 @@ def main():
     parser = argparse.ArgumentParser(
         description="Serve the SuperTuxKart browser build with COOP/COEP headers.")
     parser.add_argument("build_dir", nargs="?",
-                        default=os.path.join(SOURCE_ROOT, "build-web", "stk"),
+                        default=os.path.join(SOURCE_ROOT, "build-web", "stk", "bin"),
                         help="directory with supertuxkart.js/.wasm "
-                             "(default: build-web/stk)")
+                             "(default: build-web/stk/bin)")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--bind", default="127.0.0.1",
                         help="address to listen on (default: 127.0.0.1)")
