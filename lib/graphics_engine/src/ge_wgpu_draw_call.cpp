@@ -826,8 +826,6 @@ void GEWGPUDrawCall::upload()
         if (cmd.m_dynamic)
             cmd.m_dynamic->update();
     }
-    if (m_skybox_renderer)
-        m_skybox_renderer->upload();
 }   // upload
 
 // ----------------------------------------------------------------------------
@@ -847,24 +845,37 @@ void GEWGPUDrawCall::render(wgpu::RenderPassEncoder& pass,
     pass.SetScissorRect(vp.UpperLeftCorner.X, vp.UpperLeftCorner.Y,
         vp.getWidth(), vp.getHeight());
 
-    pass.SetBindGroup(2, g_env_bind_group);
-    renderPass(pass, GWPT_SOLID, color_format);
+    // Image based lighting when the skybox has environment maps
+    const wgpu::BindGroup* env = &g_env_bind_group;
+    if (m_skybox_renderer && getGEConfig()->m_pbr)
+    {
+        const wgpu::BindGroup& skybox_env =
+            m_skybox_renderer->getEnvBindGroup(g_env_layout);
+        if (skybox_env)
+            env = &skybox_env;
+    }
+    const bool ibl = env != &g_env_bind_group;
+    pass.SetBindGroup(2, *env);
+    renderPass(pass, GWPT_SOLID, color_format, ibl);
     if (m_skybox_renderer)
         m_skybox_renderer->render(pass, color_format, m_data_bind_group,
             g_data_layout);
-    renderPass(pass, GWPT_GHOST_DEPTH, color_format);
-    renderPass(pass, GWPT_TRANSPARENT, color_format);
+    renderPass(pass, GWPT_GHOST_DEPTH, color_format, ibl);
+    renderPass(pass, GWPT_TRANSPARENT, color_format, ibl);
 }   // render
 
 // ----------------------------------------------------------------------------
 void GEWGPUDrawCall::renderPass(wgpu::RenderPassEncoder& pass,
                                 GEWGPUPassType pt,
-                                wgpu::TextureFormat color_format)
+                                wgpu::TextureFormat color_format, bool ibl)
 {
     GEWGPUMeshCache* mc = static_cast<GEWGPUMeshCache*>(getWGPUDriver()
         ->getIrrlichtDevice()->getSceneManager()->getMeshCache());
     GEWGPUShaderManager::Constants constants;
     constants.m_has_skybox = m_skybox_renderer != NULL;
+    constants.m_ibl = ibl;
+    constants.m_specular_levels_minus_one =
+        GEWGPUSkyBoxRenderer::getSpecularLevelsMinusOne();
     WGPURenderPipeline cur_pipeline = NULL;
     const TexturesList* cur_textures = NULL;
     // 0: nothing bound, 1: mesh cache, 2: mesh cache with bones, 3: dynamic

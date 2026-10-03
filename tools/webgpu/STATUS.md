@@ -90,17 +90,22 @@ Cloud session notes:
 - Render to texture: `GEWGPUFBOTexture` (color + depth), drawn right away
   in `GEWGPUSceneManager::drawAll()` while it is the render target, like
   the Vulkan renderer. Race minimap and kart selection previews work.
+- Forward PBR: lights (the light handler is shared with Vulkan), sRGB
+  material views, and image based lighting (skybox mipmaps, diffuse and
+  specular environment maps rendered by the compute shaders when IBL is on,
+  `--enable-ibl`). Specialization constants are WGSL override constants set
+  per pipeline (`GEWGPUShaderManager::getConstants`).
 - Shader conversion: normals and tangents (A2B10G10R10 snorm, no WebGPU
   vertex format) are read as u32 and unpacked in WGSL; push constants become
   a uniform at `@group(1) @binding(4)` with a dynamic offset.
 
 ## Next
 
-1. PBR: deferred lighting (light handler, deferred FBO), IBL (environment
-   maps, compute shaders), displace. `getGEConfig()->m_pbr` is forced off in
-   `GEWGPUDriver::beginScene()`. Specialization constants are frozen to
-   their defaults by compile_shaders.py, so PBR needs WGSL variants (or
-   override constants) for deferred / IBL / skybox
+1. Deferred rendering: deferred FBO, deferred_pbr / point light passes,
+   displace (water; falls back to alphablend now), screen space reflections
+   (hiz_depth). naga cannot read the specialization constants of
+   deferred_pbr.frag and displace_mask.frag, compile_shaders.py freezes them
+   to the defaults, which needs a fix first. Also the PBR depth prepass
 2. Performance: async texture decoding, compressed textures, asset streaming
    (the whole 762 MB package is downloaded and held in memory), HiDPI
 3. Smaller issues: STK's log colour codes show up in the browser console;

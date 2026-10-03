@@ -120,7 +120,7 @@ private:
                       wgpu::BufferUsage usage, const char* label);
     // ------------------------------------------------------------------------
     void renderPass(wgpu::RenderPassEncoder& pass, GEWGPUPassType pt,
-                    wgpu::TextureFormat color_format);
+                    wgpu::TextureFormat color_format, bool ibl);
 public:
     // ------------------------------------------------------------------------
     GEWGPUDrawCall();
