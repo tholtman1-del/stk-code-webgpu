@@ -52,7 +52,8 @@ if (process.env.GAMEPAD) {
         () => ({ pressed: false, touched: false, value: 0 })),
     };
     window.__fakePad = pad;
-    navigator.getGamepads = () => [pad, null, null, null];
+    window.__padPolls = 0;
+    navigator.getGamepads = () => { window.__padPolls++; return [pad, null, null, null]; };
     setTimeout(() => {
       const event = new Event('gamepadconnected');
       event.gamepad = pad;
@@ -93,6 +94,10 @@ for (const step of steps) {
       pad.buttons[b] = { pressed: !!v, touched: !!v, value: v };
       pad.timestamp = performance.now();
     }, step.pad);
+  }
+  if (step.padinfo) {
+    console.log(`${t()} [pad] ` + await page.evaluate(() =>
+      JSON.stringify({ polls: window.__padPolls, axes: window.__fakePad.axes })));
   }
   if (step.axis) {
     await page.evaluate(([a, v]) => {

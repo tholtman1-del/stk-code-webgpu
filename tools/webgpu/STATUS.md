@@ -146,6 +146,15 @@ Cloud session notes:
   is drawn to a smaller target (also the deferred FBO) and upscaled
   bilinearly before the GUI, which stays at full resolution. Useful with
   HiDPI, which renders devicePixelRatio² as many pixels.
+- Gamepads (Gamepad API through SDL2's Emscripten joystick driver, the
+  "Standard Gamepad" mapping): tested with a fake pad in boot_test.mjs
+  (`GAMEPAD=1`, `{"pad":[b,v]}`, `{"axis":[a,v]}`): menu navigation with the
+  left stick (STK binds menus to the stick, not the d-pad, on standard
+  pads) and A. SDL takes the first value it sees of an axis as its rest
+  value, so a jump straight to full deflection is only reported once the
+  axis changes again (real sticks pass intermediate values). Joystick
+  events are allowed without canvas focus. `--race-now` only takes input
+  from the keyboard (ASSIGN mode), as in native builds.
 - Browser logs go to `console.log/warn/error` without terminal colour codes.
   Exceptions in a frame are caught like `main()` does and stop the game;
   the page shows `Module.onGameStopped` (also after quitting).
@@ -154,7 +163,7 @@ Cloud session notes:
 
 0. More testing on real GPUs and browsers (tested on the developer's Mac
    by the user: works): Safari, Firefox, Windows/Linux GPUs; split screen,
-   story mode, gamepads; a real static host deployment.
+   real gamepads; a real static host deployment.
 
 1. Texture compression: BC3 (GECompressorS3TCBC3 on the loader threads)
    works but is off by default in the browser (`enable_texture_compression`):

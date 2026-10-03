@@ -116,6 +116,12 @@ CIrrDeviceSDL::CIrrDeviceSDL(const SIrrlichtCreationParameters& param)
 	}
 #endif
 
+#ifdef __EMSCRIPTEN__
+	// SDL drops joystick events while the canvas has no keyboard focus (e.g.
+	// before it was clicked); browsers stop gamepad updates for hidden tabs
+	// anyway
+	SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+#endif
 	u32 init_flags = SDL_INIT_TIMER | SDL_INIT_VIDEO;
 	if (SDL_InitSubSystem(init_flags) < 0)
 	{
