@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>SuperTuxKart</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #10131a; color: #e8ebf2;
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  /* Fills the window. SDL treats a CSS-sized canvas as externally sized and
+     sets its backing size to match (no HiDPI yet, see the script). */
+  #canvas {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    display: block; border: 0; outline: none; touch-action: none;
+  }
+  #overlay {
+    position: fixed; inset: 0; display: flex;
+    align-items: center; justify-content: center;
+    background: #10131a; padding: 16px; box-sizing: border-box;
+  }
+  #overlay[hidden] { display: none; }
+  #panel { width: min(560px, 100%); text-align: center; }
+  #panel h1 { font-size: 22px; font-weight: 600; margin: 0 0 12px; }
+  #status { min-height: 1.5em; }
+  #bar {
+    height: 6px; margin: 16px auto 0; width: 100%;
+    background: #262c3a; border-radius: 3px; overflow: hidden;
+  }
+  #bar > div {
+    height: 100%; width: 0; background: #4f8cff;
+    border-radius: 3px; transition: width 0.15s;
+  }
+  #bar.indeterminate > div { width: 30%; animation: slide 1.2s ease-in-out infinite; }
+  @keyframes slide { from { margin-left: -30%; } to { margin-left: 100%; } }
+  #overlay.error #panel { text-align: left; }
+  #overlay.error h1 { color: #ff7b72; }
+  #overlay.error #bar { display: none; }
+  #details {
+    margin: 16px 0 0; max-height: 40vh; overflow: auto;
+    background: #181d27; border-radius: 6px; padding: 10px 12px;
+    font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  #details:empty { display: none; }
+  a { color: #79a8ff; }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="-1"></canvas>
+<div id="overlay">
+  <div id="panel">
+    <h1 id="title">SuperTuxKart</h1>
+    <div id="status">Loading…</div>
+    <div id="bar" class="indeterminate"><div></div></div>
+    <pre id="details"></pre>
+  </div>
+</div>
+<script>
+'use strict';
+// Loader for the Emscripten build (MODULARIZE, EXPORT_NAME=createSTK,
+// INVOKE_RUN=0, pthreads, emdawnwebgpu). See tools/webgpu/STATUS.md.
+
+const STK_SCRIPT = 'supertuxkart.js';
+const STK_WASM = 'supertuxkart.wasm';
+
+// Game data location in the virtual file system, read by FileManager through
+// $SUPERTUXKART_DATADIR (the data itself must be at DATA_ROOT/data/).
+const DATA_ROOT = '/stk';
+// IndexedDB-backed directory for config, saves, addons and screenshots.
+const PERSISTENT_ROOT = '/persistent';
+
+// Arguments for main(), e.g. index.html?arg=--log=0&arg=--no-start-screen
+const STK_ARGS = new URLSearchParams(location.search).getAll('arg');
+
+const ui = {
+  overlay: document.getElementById('overlay'),
+  title: document.getElementById('title'),
+  status: document.getElementById('status'),
+  bar: document.getElementById('bar'),
+  details: document.getElementById('details'),
+};
+const canvas = document.getElementById('canvas');
+
+let failed = false;
+let gameRunning = false;
+let unloading = false;
+const logTail = [];
+
+function log(line, isError) {
+  (isError ? console.error : console.log)(line);
+  logTail.push(line);
+  if (logTail.length > 40) logTail.shift();
+}
+
+function setStatus(text, fraction) {
+  if (failed) return;
+  ui.status.textContent = text;
+  if (fraction === undefined) {
+    ui.bar.classList.add('indeterminate');
+  } else {
+    ui.bar.classList.remove('indeterminate');
+    ui.bar.firstElementChild.style.width =
+      (Math.min(Math.max(fraction, 0), 1) * 100).toFixed(1) + '%';
+  }
+}
+
+// Shows a blocking error. `html` is trusted markup written in this file;
+// `details` is shown as plain text.
+function showError(title, html, details) {
+  if (failed) return;
+  failed = true;
+  ui.overlay.hidden = false;
+  ui.overlay.classList.add('error');
+  ui.title.textContent = title;
+  ui.status.innerHTML = html;
+  const tail = logTail.length ? '\n\nLast output:\n' + logTail.join('\n') : '';
+  ui.details.textContent = ((details || '') + tail).trim();
+}
+
+function errorText(e) {
+  if (e instanceof Error) return e.stack || e.message;
+  return String(e);
+}
+
+// ---------------------------------------------------------------------------
+// Canvas size: the page only sizes the canvas with CSS. SDL owns
+// canvas.width/height and sets them to the CSS size on window resize, and
+// GEWGPUDriver sizes its surface from the matching Irrlicht WindowSize.
+// HiDPI is not supported yet (the window is created without
+// SDL_WINDOW_ALLOW_HIGHDPI), so the game renders at CSS-pixel resolution.
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('pointerdown', () => canvas.focus());
+
+// ---------------------------------------------------------------------------
+// Environment checks
+function checkEnvironment() {
+  if (!window.isSecureContext) {
+    showError('Insecure context',
+      'WebGPU and threads only work on secure pages. Open the game over ' +
+      '<b>https</b> or from <b>http://localhost</b>.');
+    return false;
+  }
+  if (!window.crossOriginIsolated || typeof SharedArrayBuffer === 'undefined') {
+    showError('Page is not cross-origin isolated',
+      'The game uses threads, which need <code>SharedArrayBuffer</code>. ' +
+      'The server must send <code>Cross-Origin-Opener-Policy: same-origin</code> ' +
+      'and <code>Cross-Origin-Embedder-Policy: require-corp</code>. For local ' +
+      'testing use <code>tools/webgpu/web/serve.py</code>.');
+    return false;
+  }
+  if (!navigator.gpu) {
+    showError('WebGPU is not available',
+      'This browser does not support WebGPU, or it is disabled. Use a recent ' +
+      'Chrome, Edge, Safari or Firefox with WebGPU enabled, and make sure ' +
+      'hardware acceleration is turned on.');
+    return false;
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// WebGPU device. Device creation is asynchronous, so it happens here and the
+// device is handed to the module as Module.preinitializedWebGPUDevice, which
+// emscripten_webgpu_get_device() imports (emdawnwebgpu library_webgpu.js).
+
+// Features the renderer queries with GEWGPUDriver::hasFeature()
+const OPTIONAL_FEATURES = ['texture-compression-bc', 'texture-compression-astc'];
+// Limits raised to what the adapter supports. maxTextureDimension2D is read by
+// GEWGPUDriver as the maximum texture size; the buffer limits bound the
+// per-object data in storage buffers (spm.vert).
+const RAISED_LIMITS = ['maxTextureDimension2D', 'maxBufferSize',
+                       'maxStorageBufferBindingSize'];
+
+async function createDevice() {
+  const adapter = await navigator.gpu.requestAdapter({
+    powerPreference: 'high-performance',
+  });
+  if (!adapter) {
+    showError('No WebGPU adapter',
+      'WebGPU is supported but no GPU adapter is available. It may be ' +
+      'blocklisted, or hardware acceleration may be disabled.');
+    return null;
+  }
+  const info = adapter.info || {};
+  log(`WebGPU adapter: ${[info.vendor, info.architecture, info.device,
+    info.description].filter(Boolean).join(' / ') || 'unknown'}` +
+    (info.isFallbackAdapter ? ' (software fallback)' : ''));
+
+  const requiredFeatures = OPTIONAL_FEATURES.filter((f) => adapter.features.has(f));
+  const requiredLimits = {};
+  for (const name of RAISED_LIMITS) {
+    if (adapter.limits[name] !== undefined) requiredLimits[name] = adapter.limits[name];
+  }
+
+  let device;
+  try {
+    device = await adapter.requestDevice({
+      label: 'SuperTuxKart',
+      requiredFeatures,
+      requiredLimits,
+    });
+  } catch (e) {
+    showError('Could not create the WebGPU device',
+      'The GPU adapter refused to create a device.', errorText(e));
+    return null;
+  }
+  log(`WebGPU device: features [${requiredFeatures.join(', ')}], ` +
+    RAISED_LIMITS.map((n) => `${n}=${device.limits[n]}`).join(', '));
+
+  device.lost.then((lost) => {
+    if (unloading || (lost.reason === 'destroyed' && !gameRunning)) return;
+    showError('The graphics device was lost',
+      'The GPU stopped responding, the driver was updated or reset, or the ' +
+      'browser reclaimed the device. <a href="">Reload the page</a> to restart.',
+      `reason: ${lost.reason}\n${lost.message || ''}`);
+  });
+
+  let reportedErrors = 0;
+  device.addEventListener('uncapturederror', (e) => {
+    if (reportedErrors++ < 50) log(`WebGPU error: ${e.error.message}`, true);
+  });
+  return device;
+}
+
+// ---------------------------------------------------------------------------
+// Wasm download with progress. Streaming compilation is kept by wrapping the
+// counted stream in a new application/wasm Response.
+function instantiateWithProgress(imports, onInstance) {
+  const url = new URL(STK_WASM, new URL(STK_SCRIPT, location.href)).href;
+  (async () => {
+    const response = await fetch(url, { credentials: 'same-origin' });
+    if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
+    const total = Number(response.headers.get('Content-Length')) || 0;
+    const mb = (n) => (n / 1048576).toFixed(1);
+    let loaded = 0;
+    const progress = new TransformStream({
+      transform(chunk, controller) {
+        loaded += chunk.byteLength;
+        if (total) setStatus(`Downloading game engine… ${mb(Math.min(loaded, total))} / ${mb(total)} MB`, loaded / total);
+        else setStatus(`Downloading game engine… ${mb(loaded)} MB`);
+        controller.enqueue(chunk);
+      },
+    });
+    const counted = new Response(response.body.pipeThrough(progress),
+      { headers: { 'Content-Type': 'application/wasm' } });
+    let result;
+    if (WebAssembly.instantiateStreaming) {
+      result = await WebAssembly.instantiateStreaming(counted, imports);
+    } else {
+      result = await WebAssembly.instantiate(await counted.arrayBuffer(), imports);
+    }
+    setStatus('Starting…');
+    onInstance(result.instance, result.module);
+  })().catch((e) => {
+    showError('Could not load the game engine',
+      `Downloading or compiling <code>${STK_WASM}</code> failed.`, errorText(e));
+  });
+  return {};  // exports are delivered asynchronously through onInstance
+}
+
+// ---------------------------------------------------------------------------
+// File system
+
+// HOOK (STATUS.md Next item 6): make the game data available before main().
+// Called from preRun with the module; the returned promise is awaited (as a
+// run dependency) before the runtime starts. FileManager looks for
+// DATA_ROOT + '/data/supertuxkart.<version>'. Start any download as early as
+// possible (it can run in parallel with the wasm download) and only mount or
+// write the files here.
+async function mountGameData(mod) {
+  // Not packaged yet: nothing is mounted, so FileManager will report that the
+  // data directory is missing.
+}
+
+// Runs a promise-returning step as a run dependency, so the runtime (and
+// main) waits for it.
+function runDependency(mod, id, step) {
+  mod.addRunDependency(id);
+  Promise.resolve().then(step).then(() => mod.removeRunDependency(id), (e) => {
+    showError('Startup failed', `Step <code>${id}</code> failed.`, errorText(e));
+  });
+}
+
+function preRun(mod) {
+  const { FS, IDBFS, ENV } = mod;
+
+  // Paths read by FileManager (src/io/file_manager.cpp)
+  ENV.SUPERTUXKART_DATADIR = DATA_ROOT;
+  ENV.XDG_CONFIG_HOME = PERSISTENT_ROOT + '/config';
+  ENV.XDG_DATA_HOME = PERSISTENT_ROOT + '/data';
+  ENV.XDG_CACHE_HOME = '/tmp/cache';  // in memory, rebuilt every session
+
+  FS.mkdirTree(DATA_ROOT);
+  FS.mkdirTree(PERSISTENT_ROOT);
+  // autoPersist writes a file back to IndexedDB when it is closed
+  FS.mount(IDBFS, { autoPersist: true }, PERSISTENT_ROOT);
+
+  runDependency(mod, 'stk-persistent', () => new Promise((resolve, reject) => {
+    setStatus('Loading saved settings…');
+    FS.syncfs(true, (err) => err ? reject(err) : resolve());
+  }));
+  runDependency(mod, 'stk-game-data', () => mountGameData(mod));
+}
+
+// ---------------------------------------------------------------------------
+async function start() {
+  if (!checkEnvironment()) return;
+
+  setStatus('Initializing WebGPU…');
+  const device = await createDevice();
+  if (!device) return;
+
+  setStatus('Loading game engine…');
+  try {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = STK_SCRIPT;  // workers reload this URL (document.currentScript)
+      script.onload = resolve;
+      script.onerror = () => reject(new Error(`Could not load ${STK_SCRIPT}`));
+      document.body.appendChild(script);
+    });
+  } catch (e) {
+    showError('Could not load the game engine',
+      `<code>${STK_SCRIPT}</code> is missing. Pass the build directory to ` +
+      '<code>serve.py</code>.', errorText(e));
+    return;
+  }
+
+  const moduleArg = {
+    canvas,
+    preinitializedWebGPUDevice: device,
+    preRun: [preRun],
+    instantiateWasm: instantiateWithProgress,
+    print: (text) => log(text),
+    printErr: (text) => log(text, true),
+    setStatus: (text) => { if (text) setStatus(text); },
+    onAbort: (what) => {
+      showError('The game stopped unexpectedly',
+        'The game hit a fatal error. <a href="">Reload the page</a> to restart.',
+        String(what));
+    },
+  };
+  let mod;
+  try {
+    mod = await createSTK(moduleArg);
+  } catch (e) {
+    showError('Could not start the game', 'Initializing the runtime failed.', errorText(e));
+    return;
+  }
+  if (failed) return;
+
+  ui.overlay.hidden = true;
+  gameRunning = true;
+  canvas.focus();
+  log(`Starting SuperTuxKart ${STK_ARGS.join(' ')}`);
+  try {
+    mod.callMain(STK_ARGS);
+  } catch (e) {
+    if (e !== 'unwind') {
+      showError('The game stopped unexpectedly', 'main() threw an exception.', errorText(e));
+    }
+  }
+}
+
+window.addEventListener('pagehide', () => { unloading = true; });
+window.addEventListener('error', (e) => {
+  if (e.error === 'unwind' || e.message === 'unwind') return;
+  showError('The game stopped unexpectedly', 'An uncaught error occurred.',
+    errorText(e.error || e.message));
+});
+window.addEventListener('unhandledrejection', (e) => {
+  showError('The game stopped unexpectedly', 'An uncaught error occurred.',
+    errorText(e.reason));
+});
+
+start();
+</script>
+</body>
+</html>
