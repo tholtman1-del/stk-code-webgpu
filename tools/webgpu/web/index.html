@@ -322,6 +322,80 @@ async function mountGameData(mod) {
     // canOwn: the file keeps a view into the blob instead of a copy
     FS.writeFile(full, blob.subarray(offset, offset + size), { canOwn: true });
   }
+  for (const [path, size] of manifest.lazy || []) {
+    const full = `${DATA_ROOT}/${path}`;
+    const dir = full.substring(0, full.lastIndexOf('/'));
+    if (!dirs.has(dir)) {
+      FS.mkdirTree(dir);
+      dirs.add(dir);
+    }
+    const url = manifest.lazyBase + path.split('/').map(encodeURIComponent).join('/');
+    createStreamedFile(FS, full, size, url);
+  }
+}
+
+// Streamed files: the size is known (for stat), the contents are fetched the
+// first time the game reads the file. File system calls run on the main
+// thread (other threads' calls are proxied to it) and the game reads files
+// synchronously, so this is a synchronous XHR, the only blocking fetch on
+// the main thread. Emscripten's FS.createLazyFile refuses to do that, hence
+// this version of it. The HTTP cache keeps the files for later sessions.
+const streamStats = window.stkStreamStats = { files: 0, bytes: 0, ms: 0 };
+
+function fetchSync(url) {
+  const xhr = new XMLHttpRequest();
+  xhr.open('GET', url, false);
+  // Binary data from a synchronous XHR: responseType is not allowed, so read
+  // the bytes as x-user-defined characters
+  xhr.overrideMimeType('text/plain; charset=x-user-defined');
+  xhr.send(null);
+  if (!(xhr.status >= 200 && xhr.status < 300)) {
+    throw new Error(`${url}: HTTP ${xhr.status}`);
+  }
+  const text = xhr.responseText;
+  const data = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) data[i] = text.charCodeAt(i) & 0xff;
+  return data;
+}
+
+function createStreamedFile(FS, path, size, url) {
+  const slash = path.lastIndexOf('/');
+  const node = FS.createFile(path.substring(0, slash), path.substring(slash + 1),
+    {}, true, false);
+  // MEMFS reports usedBytes as the size
+  node.usedBytes = size;
+  let loaded = false;
+  const load = () => {
+    if (loaded) return;
+    const t0 = performance.now();
+    let data;
+    try {
+      data = fetchSync(url);
+    } catch (e) {
+      console.error(`Streaming ${path} failed:`, e);
+      throw new FS.ErrnoError(29 /* EIO */);
+    }
+    node.contents = data;
+    node.usedBytes = data.length;
+    loaded = true;
+    const ms = performance.now() - t0;
+    streamStats.files++;
+    streamStats.bytes += data.length;
+    streamStats.ms += ms;
+    console.debug(`Streamed ${path} (${(data.length / 1024).toFixed(0)} KB, ${ms.toFixed(0)} ms)`);
+  };
+  const ops = node.stream_ops;
+  node.stream_ops = {
+    ...ops,
+    read(stream, buffer, offset, length, position) {
+      load();
+      return ops.read(stream, buffer, offset, length, position);
+    },
+    mmap(stream, length, position, prot, flags) {
+      load();
+      return ops.mmap(stream, length, position, prot, flags);
+    },
+  };
 }
 
 // Runs a promise-returning step as a run dependency, so the runtime (and

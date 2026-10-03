@@ -75,9 +75,15 @@ Cloud session notes:
 - The `supertuxkart` target links (10 MB wasm). glad's `gl.c` is linked so
   the OpenGL code paths resolve; they never run without the OpenGL driver.
   DNS queries are skipped in the browser.
-- Game data: `package_data.py` packs `data/` and all official assets
-  (762 MB) into one blob, which the page downloads in parallel with the
-  engine and unpacks into MEMFS at `/stk` before `main()`.
+- Game data: `package_data.py` packs the core files (95 MB: `data/`
+  without translations and replays, karts, models, sfx, small and XML
+  files, and the files in `core_files.txt` read before the main menu) into
+  one blob, which the page downloads in parallel with the engine and
+  unpacks into MEMFS at `/stk` before `main()`. The other files (667 MB:
+  textures, tracks, music, ...) are in `stk-files/` and fetched with a
+  synchronous XHR when the game first reads them (a hacienda race streams
+  85 files, 18 MB). After asset changes, refresh `core_files.txt` with
+  `update_core_list.py` (see the script). `--no-streaming` makes one blob.
 - Boots to the main menu (2D GUI on WebGPU, mouse input, first-run
   dialogs, player creation, config saved to IDBFS).
 - 3D without PBR: `GEWGPUSceneManager`, `GEWGPUCameraSceneNode`,
@@ -115,7 +121,8 @@ Cloud session notes:
 
 ## Next
 
-1. Performance: async texture decoding, compressed textures, asset streaming
-   (the whole 762 MB package is downloaded and held in memory), HiDPI.
+1. Performance: async texture decoding, compressed textures, HiDPI.
+   Streaming: one request per file while a track loads (could be bundled
+   per track), streamed files stay in memory once read.
    The depth prepass could be skipped on tiled GPUs (Apple, mobile) if the
    adapter info allows telling them apart
