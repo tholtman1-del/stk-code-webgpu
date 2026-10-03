@@ -375,9 +375,9 @@ async function mountGameData(mod) {
 // thread (other threads' calls are proxied to it) and the game reads files
 // synchronously, so this is a synchronous XHR, the only blocking fetch on
 // the main thread. Emscripten's FS.createLazyFile refuses to do that, hence
-// this version of it. The contents are dropped when the last open stream of
-// the file is closed (textures and models are read once), a later read
-// fetches them again, normally from the HTTP cache.
+// this version of it. The contents are dropped after the last open stream of
+// the file is closed, once the current frame is done (textures and models
+// are read once), a later read fetches them again from the HTTP cache.
 const streamStats = window.stkStreamStats = { files: 0, bytes: 0, ms: 0 };
 
 // Track bundles (package_data.py): the first streamed file read of a track
@@ -445,11 +445,15 @@ function createStreamedFile(FS, packagePath, path, size, url) {
   // MEMFS reports usedBytes as the size
   node.usedBytes = size;
   let loaded = false;
+  // Contents are only dropped after a read: existence checks open and close
+  // files, which must not drop what a track bundle filled in
+  let read = false;
   let openStreams = 0;
   const fill = (data) => {
     node.contents = data;
     node.usedBytes = data.length;
     loaded = true;
+    read = false;
   };
   const load = () => {
     if (loaded) return;
@@ -485,16 +489,24 @@ function createStreamedFile(FS, packagePath, path, size, url) {
       if (ops.close) ops.close(stream);
       if (--openStreams > 0) return;
       openStreams = 0;
-      node.contents = null;
-      node.usedBytes = size;
-      loaded = false;
+      if (!read) return;
+      // After the current frame (or the whole track loading, which runs in
+      // one): files are often read again while loading (skybox faces)
+      setTimeout(() => {
+        if (openStreams > 0 || !loaded) return;
+        node.contents = null;
+        node.usedBytes = size;
+        loaded = false;
+      }, 0);
     },
     read(stream, buffer, offset, length, position) {
       load();
+      read = true;
       return ops.read(stream, buffer, offset, length, position);
     },
     mmap(stream, length, position, prot, flags) {
       load();
+      read = true;
       return ops.mmap(stream, length, position, prot, flags);
     },
   };

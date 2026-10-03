@@ -19,9 +19,10 @@ the game starts after downloading the core (~40 MB) instead of everything.
 Track bundles: when the game reads the first streamed file of a track, the
 page fetches stk-bundles/TRACK.N.bin instead, with every streamed file of
 the track directory and the shared files (textures, library objects, music)
-it read when recorded by record_track_deps.py (track_deps.json), so loading
-a track takes a few requests instead of about a hundred. The single files
-stay in stk-files/ for everything else.
+it read when recorded by record_track_deps.py (track_deps.json) that few
+other tracks read, so loading a track takes a few requests instead of about
+a hundred. Shared files most tracks read are in the core package. The single
+files stay in stk-files/ for everything else.
 """
 import argparse
 import json
@@ -54,12 +55,32 @@ CORE_LIST = os.path.join(ROOT, "tools", "webgpu", "core_files.txt")
 LAZY_DIR = "stk-files"
 BUNDLE_DIR = "stk-bundles"
 TRACK_DEPS = os.path.join(ROOT, "tools", "webgpu", "track_deps.json")
+# Shared files read by this many tracks go in the core package, the ones read
+# by at most BUNDLE_MAX_TRACKS are copied into each of those track bundles,
+# the others stay single files (limits the duplication)
+CORE_MIN_TRACKS = 10
+BUNDLE_MAX_TRACKS = 4
+
+
+def load_track_deps():
+    """{track: [shared files]} and {shared file: number of tracks}"""
+    deps = {}
+    if os.path.exists(TRACK_DEPS):
+        with open(TRACK_DEPS) as f:
+            deps = json.load(f)
+    users = {}
+    for paths in deps.values():
+        for path in paths:
+            users[path] = users.get(path, 0) + 1
+    return deps, users
 # Cloudflare Pages allows 25 MiB per file, GitHub Pages 100 MB
 PART_SIZE = 24 * 1024 * 1024
 
 
-def is_streamed(rel, size, core_list):
+def is_streamed(rel, size, core_list, track_users):
     if size < STREAM_MIN_SIZE or rel in core_list:
+        return False
+    if track_users.get(rel, 0) >= CORE_MIN_TRACKS:
         return False
     if rel.startswith(CORE_ASSET_DIRS):
         return False
@@ -70,16 +91,12 @@ def is_streamed(rel, size, core_list):
     return True
 
 
-def write_bundles(out, lazy, sources):
+def write_bundles(out, lazy, sources, deps, users):
     """Writes the track bundles, returns their manifest entries:
     {track: {"parts": [...], "files": [[path, part, offset, size], ...]}}"""
     bundle_root = os.path.join(out, BUNDLE_DIR)
     shutil.rmtree(bundle_root, ignore_errors=True)
     lazy_paths = {path for path, _ in lazy}
-    deps = {}
-    if os.path.exists(TRACK_DEPS):
-        with open(TRACK_DEPS) as f:
-            deps = json.load(f)
     tracks = {}
     for path in sorted(lazy_paths):
         parts = path.split("/")
@@ -87,7 +104,8 @@ def write_bundles(out, lazy, sources):
             tracks.setdefault(parts[2], []).append(path)
     for track, paths in deps.items():
         if track in tracks:
-            tracks[track] += [p for p in paths if p in lazy_paths]
+            tracks[track] += [p for p in paths if p in lazy_paths and
+                              users[p] <= BUNDLE_MAX_TRACKS]
     if not tracks:
         return {}
     os.makedirs(bundle_root)
@@ -154,6 +172,7 @@ def main():
             sys.exit(f"Missing assets directory {path}")
         sources += walk(path, f"assets/{d}")
 
+    deps, track_users = load_track_deps()
     core_list = set()
     if os.path.exists(CORE_LIST):
         with open(CORE_LIST) as f:
@@ -172,7 +191,8 @@ def main():
     blob = bytearray()
     for src, rel in sources:
         size = os.path.getsize(src)
-        if not args.no_streaming and is_streamed(rel, size, core_list):
+        if not args.no_streaming and is_streamed(rel, size, core_list,
+                                                track_users):
             link_or_copy(src, os.path.join(lazy_root, rel))
             lazy.append([rel, size])
             lazy_size += size
@@ -188,8 +208,8 @@ def main():
         with open(os.path.join(args.out, name), "wb") as out:
             out.write(blob[start:start + PART_SIZE])
         parts.append(name)
-    bundles = write_bundles(args.out, lazy,
-                            {rel: src for src, rel in sources})
+    bundles = {} if args.no_streaming else write_bundles(
+        args.out, lazy, {rel: src for src, rel in sources}, deps, track_users)
     with open(os.path.join(args.out, "stk-data.json"), "w") as f:
         json.dump({"size": offset, "parts": parts, "partSize": PART_SIZE,
                    "files": files, "lazyBase": LAZY_DIR + "/",

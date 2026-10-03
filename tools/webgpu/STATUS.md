@@ -99,9 +99,12 @@ Cloud session notes:
   `update_core_list.py` (see the script). `--no-streaming` makes one blob.
 - Track bundles: `stk-bundles/TRACK.N.bin` hold a track's streamed files
   plus the shared files it read when recorded (`record_track_deps.py` ->
-  `track_deps.json`); the first streamed read of a track fetches its
-  bundle, so a track loads with a few requests instead of ~90 (`?nobundles`
-  turns them off). Shared files are duplicated per bundle.
+  `track_deps.json`) that at most 4 tracks read; shared files read by 10+
+  tracks are in the core package (115 MB now), the others stay single.
+  The first streamed read of a track fetches its bundle: hacienda loads
+  with 14 requests instead of 91, zengarden 8 (`?nobundles` turns them
+  off). Bundles are 601 MB, the single files 646 MB. Streamed contents
+  are dropped after a read once the frame is done.
 - Boots to the main menu (2D GUI on WebGPU, mouse input, first-run
   dialogs, player creation, config saved to IDBFS).
 - 3D without PBR: `GEWGPUSceneManager`, `GEWGPUCameraSceneNode`,
