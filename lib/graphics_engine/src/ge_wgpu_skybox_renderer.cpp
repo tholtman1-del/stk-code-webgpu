@@ -171,13 +171,17 @@ void GEWGPUSkyBoxRenderer::addSkyBox(irr::scene::ISceneNode* skybox)
 
     wgpu::TextureViewDescriptor view_desc;
     view_desc.dimension = wgpu::TextureViewDimension::Cube;
-    wgpu::TextureView view = m_cubemap.CreateView(&view_desc);
+    wgpu::TextureView views[2];
+    views[0] = m_cubemap.CreateView(&view_desc);
+    // Sampled when deferred (linear HDR)
+    view_desc.format = wgpu::TextureFormat::BGRA8UnormSrgb;
+    views[1] = m_cubemap.CreateView(&view_desc);
     std::array<wgpu::BindGroupEntry, 4> entries = {};
     const uint32_t bindings[2] = { SKYBOX_BINDING, SKYBOX_SRGB_BINDING };
     for (unsigned i = 0; i < 2; i++)
     {
         entries[i * 2].binding = bindings[i];
-        entries[i * 2].textureView = view;
+        entries[i * 2].textureView = views[i];
         entries[i * 2 + 1].binding =
             bindings[i] + GEWGPUShaderManager::getSamplerBindingOffset();
         entries[i * 2 + 1].sampler = driver->getSampler(GVS_SKYBOX);
@@ -363,18 +367,24 @@ void GEWGPUSkyBoxRenderer::generateEnvironmentMaps()
 
 // ----------------------------------------------------------------------------
 const wgpu::BindGroup& GEWGPUSkyBoxRenderer::getEnvBindGroup(
-                                            const wgpu::BindGroupLayout& layout)
+                                         const wgpu::BindGroupLayout& layout,
+                                         const wgpu::TextureView& dummy)
 {
-    if (m_env_bind_group || !m_diffuse_env || !m_specular_env)
+    if (m_env_bind_group || !m_bind_group)
         return m_env_bind_group;
     wgpu::TextureViewDescriptor view_desc;
     view_desc.dimension = wgpu::TextureViewDimension::Cube;
-    const wgpu::Texture* textures[2] = { &m_diffuse_env, &m_specular_env };
-    std::array<wgpu::BindGroupEntry, 4> entries = {};
-    for (unsigned i = 0; i < 2; i++)
+    std::array<wgpu::TextureView, 4> views;
+    views[0] = m_diffuse_env ? m_diffuse_env.CreateView(&view_desc) : dummy;
+    views[1] = m_specular_env ? m_specular_env.CreateView(&view_desc) : dummy;
+    views[2] = m_cubemap.CreateView(&view_desc);
+    view_desc.format = wgpu::TextureFormat::BGRA8UnormSrgb;
+    views[3] = m_cubemap.CreateView(&view_desc);
+    std::array<wgpu::BindGroupEntry, 8> entries = {};
+    for (unsigned i = 0; i < 4; i++)
     {
         entries[i * 2].binding = i;
-        entries[i * 2].textureView = textures[i]->CreateView(&view_desc);
+        entries[i * 2].textureView = views[i];
         entries[i * 2 + 1].binding =
             i + GEWGPUShaderManager::getSamplerBindingOffset();
         entries[i * 2 + 1].sampler = getWGPUDriver()->getSampler(GVS_SKYBOX);
@@ -398,7 +408,8 @@ float GEWGPUSkyBoxRenderer::getSpecularLevelsMinusOne()
 void GEWGPUSkyBoxRenderer::render(wgpu::RenderPassEncoder& pass,
                                   wgpu::TextureFormat color_format,
                                   const wgpu::BindGroup& data,
-                                  const wgpu::BindGroupLayout& data_layout)
+                                  const wgpu::BindGroupLayout& data_layout,
+                                  bool deferred)
 {
     if (!m_skybox || !m_bind_group)
         return;
@@ -413,7 +424,7 @@ void GEWGPUSkyBoxRenderer::render(wgpu::RenderPassEncoder& pass,
         m_pipeline_layout =
             driver->getDevice().CreatePipelineLayout(&pl_desc);
     }
-    wgpu::RenderPipeline& pipeline = m_pipelines[color_format];
+    wgpu::RenderPipeline& pipeline = m_pipelines[{ color_format, deferred }];
     if (!pipeline)
     {
         wgpu::ColorTargetState target;
@@ -423,6 +434,12 @@ void GEWGPUSkyBoxRenderer::render(wgpu::RenderPassEncoder& pass,
         fragment.entryPoint = "main";
         fragment.targetCount = 1;
         fragment.targets = &target;
+        GEWGPUShaderManager::Constants c;
+        c.m_deferred = deferred;
+        std::vector<wgpu::ConstantEntry> constants =
+            GEWGPUShaderManager::getConstants("skybox.frag", c);
+        fragment.constantCount = constants.size();
+        fragment.constants = constants.data();
         // fullscreen_quad.vert is at depth 1, the clear value: only pixels
         // without geometry pass
         wgpu::DepthStencilState depth;

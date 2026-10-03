@@ -21,6 +21,7 @@ using namespace video;
 
 namespace GE
 {
+class GEWGPUDeferredFBO;
 class GEWGPUDrawCall;
 class GEWGPUFBOTexture;
 class GEWGPUSkyBoxRenderer;
@@ -348,6 +349,10 @@ private:
     void createBillboardQuad();
     // ------------------------------------------------------------------------
     const wgpu::TextureView& getDepthView(const core::dimension2du& size);
+    // ------------------------------------------------------------------------
+    void renderDeferred(wgpu::CommandEncoder& encoder,
+                        const std::vector<GEWGPUDrawCall*>& draw_calls,
+                        const wgpu::TextureView& output);
 
     SIrrlichtCreationParameters m_params;
     SMaterial Material;
@@ -371,6 +376,7 @@ private:
     std::unique_ptr<GEWGPUSkyBoxRenderer> m_skybox_renderer;
     GEWGPUFBOTexture* m_rtt_texture;
     video::SColor m_rtt_clear_color;
+    std::unique_ptr<GEWGPUDeferredFBO> m_deferred_fbo;
     wgpu::Texture m_depth_texture;
     wgpu::TextureView m_depth_view;
 

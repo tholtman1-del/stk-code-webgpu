@@ -73,6 +73,10 @@ def compile_one(src, variant, pbr, verbose, freeze=False):
         text = push_constants_to_uniform(wgsl.read_text())
         if stage == "vert":
             text = unpack_packed_inputs(text)
+        elif stage == "frag":
+            # GLSL allows implicit derivatives (texture()) after non-uniform
+            # branches and discard, WGSL rejects them by default
+            text = "diagnostic(off, derivative_uniformity);\n" + text
         wgsl.write_text(text)
     return True, ""
 

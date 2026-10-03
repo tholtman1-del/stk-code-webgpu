@@ -3,6 +3,7 @@
 #include "../source/Irrlicht/os.h"
 
 #include "ge_main.hpp"
+#include "ge_material_manager.hpp"
 #include "ge_vulkan_animated_mesh_scene_node.hpp"
 #include "ge_vulkan_mesh_scene_node.hpp"
 #include "ge_wgpu_camera_scene_node.hpp"
@@ -199,8 +200,44 @@ irr::u32 GEWGPUSceneManager::registerNodeForRendering(
 }   // registerNodeForRendering
 
 // ----------------------------------------------------------------------------
+namespace
+{
+// ----------------------------------------------------------------------------
+/** Counts visible meshes with displace materials, as
+ *  GEVulkanSceneManager::detectDeferred. */
+unsigned countDisplace(irr::scene::ISceneNode* node)
+{
+    unsigned count = 0;
+    if (node->isVisible() &&
+        (node->getType() == irr::scene::ESNT_ANIMATED_MESH ||
+        node->getType() == irr::scene::ESNT_MESH))
+    {
+        for (unsigned i = 0; i < node->getMaterialCount(); i++)
+        {
+            if (GEMaterialManager::getShader(node->getMaterial(i)
+                .MaterialType) == "displace")
+                count++;
+        }
+    }
+    const irr::core::array<irr::scene::ISceneNode*>& children =
+        node->getChildren();
+    for (unsigned i = 0; i < children.size(); i++)
+        count += countDisplace(children[i]);
+    return count;
+}   // countDisplace
+
+}   // anonymous namespace
+
+// ----------------------------------------------------------------------------
 void GEWGPUSceneManager::addDrawCall(GEWGPUCameraSceneNode* cam)
 {
+    // Deferred rendering for displace (water), decided when a camera is
+    // added after the track is loaded, as in the Vulkan renderer
+    if (!static_cast<GEWGPUDriver*>(getVideoDriver())->getRenderTargetTexture())
+    {
+        getGEConfig()->m_auto_deferred_type =
+            countDisplace(this) > 0 ? GADT_DISPLACE : GADT_DISABLED;
+    }
     m_draw_calls[cam] = std::unique_ptr<GEWGPUDrawCall>(new GEWGPUDrawCall);
 }   // addDrawCall
 

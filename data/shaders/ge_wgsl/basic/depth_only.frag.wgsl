@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 fn main_1() {
     return;
 }

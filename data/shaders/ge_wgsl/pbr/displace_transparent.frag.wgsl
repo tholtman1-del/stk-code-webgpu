@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 struct Constants {
     m_displace_direction: vec4<f32>,
 }

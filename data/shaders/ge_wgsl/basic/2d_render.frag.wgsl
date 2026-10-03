@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 @group(0) @binding(16) 
 var f_tex_sampler: sampler;
 @group(0) @binding(0) 

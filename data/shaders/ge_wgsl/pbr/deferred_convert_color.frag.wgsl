@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 @id(0) override u_ibl: bool = true;
 
 var<private> o_color: vec4<f32>;

@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 var<private> o_color: vec4<f32>;
 
 fn main_1() {

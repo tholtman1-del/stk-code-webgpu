@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 struct CameraBuffer {
     m_view_matrix: mat4x4<f32>,
     m_projection_matrix: mat4x4<f32>,

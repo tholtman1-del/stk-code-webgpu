@@ -9,6 +9,7 @@
 #include "ge_vulkan_animated_mesh_scene_node.hpp"
 #include "ge_vulkan_light_handler.hpp"
 #include "ge_wgpu_camera_scene_node.hpp"
+#include "ge_wgpu_deferred_fbo.hpp"
 #include "ge_wgpu_driver.hpp"
 #include "ge_wgpu_dynamic_spm_buffer.hpp"
 #include "ge_wgpu_mesh_cache.hpp"
@@ -45,6 +46,7 @@ wgpu::BindGroupLayout g_data_layout;
 // Group 2 of the PBR shaders: diffuse and specular environment cube maps
 wgpu::BindGroupLayout g_env_layout;
 wgpu::BindGroup g_env_bind_group;
+wgpu::TextureView g_dummy_env_view;
 wgpu::PipelineLayout g_pipeline_layout;
 std::unordered_map<std::string, wgpu::RenderPipeline> g_pipelines;
 // Key is the texture views of every layer, then the sampler
@@ -133,7 +135,8 @@ void createLayouts()
     g_data_layout = device.CreateBindGroupLayout(&desc);
 
     entries.clear();
-    for (unsigned i = 0; i < 2; i++)
+    // Diffuse and specular environment maps, skybox and its sRGB view
+    for (unsigned i = 0; i < 4; i++)
     {
         wgpu::BindGroupLayoutEntry cube;
         cube.binding = i;
@@ -152,7 +155,7 @@ void createLayouts()
     desc.entries = entries.data();
     g_env_layout = device.CreateBindGroupLayout(&desc);
 
-    // Black environment until image based lighting is implemented
+    // Black environment without skybox
     wgpu::TextureDescriptor tex_desc;
     tex_desc.label = "dummy environment map";
     tex_desc.size = { 1, 1, 6 };
@@ -171,9 +174,10 @@ void createLayouts()
         &data_layout, &extent);
     wgpu::TextureViewDescriptor view_desc;
     view_desc.dimension = wgpu::TextureViewDimension::Cube;
-    wgpu::TextureView dummy_view = dummy.CreateView(&view_desc);
-    std::array<wgpu::BindGroupEntry, 4> env_entries = {};
-    for (unsigned i = 0; i < 2; i++)
+    g_dummy_env_view = dummy.CreateView(&view_desc);
+    const wgpu::TextureView& dummy_view = g_dummy_env_view;
+    std::array<wgpu::BindGroupEntry, 8> env_entries = {};
+    for (unsigned i = 0; i < 4; i++)
     {
         env_entries[i * 2].binding = i;
         env_entries[i * 2].textureView = dummy_view;
@@ -217,11 +221,13 @@ void createLayouts()
 wgpu::RenderPipeline getPipeline(const std::string& shader, bool skinning,
                                  GEWGPUPassType pt,
                                  wgpu::TextureFormat color_format,
-                                 const GEWGPUShaderManager::Constants& c)
+                                 const GEWGPUShaderManager::Constants& c,
+                                 const GEWGPUDeferredFBO* dfbo)
 {
     std::string key = std::to_string(pt) + shader +
         (skinning ? "_skinning" : "") + std::to_string((int)color_format) +
-        (c.m_ibl ? "i" : "") + (c.m_has_skybox ? "s" : "");
+        (c.m_ibl ? "i" : "") + (c.m_has_skybox ? "s" : "") +
+        (c.m_deferred ? "d" : "");
     auto it = g_pipelines.find(key);
     if (it != g_pipelines.end())
         return it->second;
@@ -258,7 +264,21 @@ wgpu::RenderPipeline getPipeline(const std::string& shader, bool skinning,
             additive = false;
         }
         else
-            valid = material->isTransparent();
+        {
+            // displace is drawn by the displace passes when deferred
+            valid = material->isTransparent() &&
+                !(c.m_deferred && shader == "displace");
+        }
+        break;
+    case GWPT_DISPLACE_MASK:
+        // As GVPT_DISPLACE_MASK in GEVulkanDrawCall::createAllPipelines
+        valid = c.m_deferred && shader == "displace";
+        fragment_shader = "displace_mask.frag";
+        alphablend = additive = false;
+        depth_write = false;
+        break;
+    case GWPT_DISPLACE_COLOR:
+        valid = c.m_deferred && shader == "displace";
         break;
     default:
         break;
@@ -306,18 +326,28 @@ wgpu::RenderPipeline getPipeline(const std::string& shader, bool skinning,
             wgpu::BlendFactor::OneMinusSrcAlpha };
     }
     blend.alpha = blend.color;
-    wgpu::ColorTargetState target;
-    target.format = color_format;
+    // G-buffer color and normal when deferred
+    std::array<wgpu::ColorTargetState, 2> targets = {};
+    unsigned target_count = 1;
+    targets[0].format = color_format;
+    if (pt == GWPT_SOLID && c.m_deferred)
+    {
+        targets[0].format = targets[1].format =
+            GEWGPUDeferredFBO::GBUFFER_FORMAT;
+        target_count = 2;
+    }
+    else if (pt == GWPT_DISPLACE_MASK)
+        targets[0].format = GEWGPUDeferredFBO::MASK_FORMAT;
     if (write_color && (alphablend || additive))
-        target.blend = &blend;
+        targets[0].blend = &blend;
     if (!write_color)
-        target.writeMask = wgpu::ColorWriteMask::None;
+        targets[0].writeMask = wgpu::ColorWriteMask::None;
 
     wgpu::FragmentState fragment;
     fragment.module = GEWGPUShaderManager::getShader(fragment_shader);
     fragment.entryPoint = "main";
-    fragment.targetCount = 1;
-    fragment.targets = &target;
+    fragment.targetCount = target_count;
+    fragment.targets = targets.data();
     std::vector<wgpu::ConstantEntry> fs_constants =
         GEWGPUShaderManager::getConstants(fragment_shader, c);
     fragment.constantCount = fs_constants.size();
@@ -330,9 +360,23 @@ wgpu::RenderPipeline getPipeline(const std::string& shader, bool skinning,
     depth.depthCompare = material->m_depth_test ?
         depth_compare : wgpu::CompareFunction::Always;
 
+    // The displace passes have their textures in group 3
+    wgpu::PipelineLayout layout = g_pipeline_layout;
+    if (pt == GWPT_DISPLACE_MASK || pt == GWPT_DISPLACE_COLOR)
+    {
+        std::array<wgpu::BindGroupLayout, 4> layouts =
+            {{ g_material_layout, g_data_layout, g_env_layout,
+            pt == GWPT_DISPLACE_MASK ? dfbo->getDisplaceMaskLayout() :
+            dfbo->getDisplaceLayout() }};
+        wgpu::PipelineLayoutDescriptor pl_desc;
+        pl_desc.bindGroupLayoutCount = layouts.size();
+        pl_desc.bindGroupLayouts = layouts.data();
+        layout = getWGPUDriver()->getDevice().CreatePipelineLayout(&pl_desc);
+    }
+
     wgpu::RenderPipelineDescriptor desc;
     desc.label = key.c_str();
-    desc.layout = g_pipeline_layout;
+    desc.layout = layout;
     desc.vertex.module = GEWGPUShaderManager::getShader(vertex_shader);
     desc.vertex.entryPoint = "main";
     std::vector<wgpu::ConstantEntry> vs_constants =
@@ -423,6 +467,8 @@ GEWGPUDrawCall::GEWGPUDrawCall()
 {
     m_skybox_renderer = NULL;
     m_camera = NULL;
+    m_deferred = false;
+    m_deferred_pbr_offset = m_pointlight_offset = m_displace_color_offset = 0;
     m_object_buffer_size = m_skinning_buffer_size =
         m_push_constants_buffer_size = 0;
 }   // GEWGPUDrawCall
@@ -453,9 +499,9 @@ std::string GEWGPUDrawCall::getShader(const irr::video::SMaterial& m) const
 {
     std::string shader = GEMaterialManager::getShader(m.MaterialType);
     auto material = GEMaterialManager::getMaterial(shader);
-    // displace needs deferred rendering, which is not implemented yet
+    // displace needs deferred rendering
     if (!material->m_nonpbr_fallback.empty() &&
-        (!getGEConfig()->m_pbr || shader == "displace"))
+        (!getGEConfig()->m_pbr || (shader == "displace" && !m_deferred)))
     {
         shader = material->m_nonpbr_fallback;
         material = GEMaterialManager::getMaterial(shader);
@@ -472,6 +518,9 @@ void GEWGPUDrawCall::prepare(GEWGPUCameraSceneNode* cam)
 {
     reset();
     m_camera = cam;
+    // Deferred rendering is only used on screen, as in the Vulkan renderer
+    m_deferred = needsDeferredRendering(true/*auto_deferred*/) &&
+        !getWGPUDriver()->getRenderTargetTexture();
     m_culling_tool->init(cam);
     m_view_position = cam->getAbsolutePosition();
     m_billboard_rotation = MiniGLM::getBulletQuaternion(cam->getViewMatrix());
@@ -587,7 +636,7 @@ void GEWGPUDrawCall::generate()
         if (m_skybox_renderer)
             skytop = m_skybox_renderer->getSkytopColor();
         m_light_handler->generate(m_view_position,
-            m_skybox_renderer ? &skytop : NULL, false/*deferred*/);
+            m_skybox_renderer ? &skytop : NULL, m_deferred);
     }
     // Index 0 is the identity matrix, for nodes without skinning data
     m_skinning.emplace_back();
@@ -789,6 +838,33 @@ void GEWGPUDrawCall::upload()
             std::min<uint32_t>(size, PUSH_CONSTANTS_SIZE));
         m_push_constants_offsets[cmd.m_shader] = offset;
     }
+    if (m_deferred)
+    {
+        auto add_slot = [&push_data](const void* data, size_t size)
+        {
+            uint32_t offset = push_data.size();
+            push_data.resize(offset + PUSH_CONSTANTS_SLOT, 0);
+            memcpy(&push_data[offset], data, size);
+            return offset;
+        };
+        // deferred_pbr.frag and deferred_pointlight.vert, as
+        // GEVulkanDrawCall::renderDeferredLighting
+        int32_t fullscreen = m_light_handler ?
+            m_light_handler->getFullscreenLightCount() : 0;
+        m_deferred_pbr_offset = add_slot(&fullscreen, sizeof(fullscreen));
+        struct
+        {
+            float m_rotation[4];
+            int32_t m_fullscreen_light;
+        } pointlight;
+        memcpy(pointlight.m_rotation, &m_billboard_rotation[0],
+            sizeof(pointlight.m_rotation));
+        pointlight.m_fullscreen_light = fullscreen;
+        m_pointlight_offset = add_slot(&pointlight, sizeof(pointlight));
+        uint32_t has_displace = hasDisplace() ? 1 : 0;
+        m_displace_color_offset = add_slot(&has_displace,
+            sizeof(has_displace));
+    }
     recreate |= ensureBuffer(m_push_constants_buffer,
         m_push_constants_buffer_size, push_data.size(),
         wgpu::BufferUsage::Uniform, "push constants");
@@ -829,51 +905,165 @@ void GEWGPUDrawCall::upload()
 }   // upload
 
 // ----------------------------------------------------------------------------
-void GEWGPUDrawCall::render(wgpu::RenderPassEncoder& pass,
-                            wgpu::TextureFormat color_format)
+bool GEWGPUDrawCall::hasIBL()
+{
+    return m_skybox_renderer && getGEConfig()->m_pbr &&
+        m_skybox_renderer->hasEnvironmentMaps();
+}   // hasIBL
+
+// ----------------------------------------------------------------------------
+bool GEWGPUDrawCall::hasDisplace() const
+{
+    for (const DrawCmd& cmd : m_cmds)
+    {
+        if (cmd.m_shader == "displace")
+            return true;
+    }
+    return false;
+}   // hasDisplace
+
+// ----------------------------------------------------------------------------
+bool GEWGPUDrawCall::beginRendering(wgpu::RenderPassEncoder& pass)
 {
     if (!m_camera || !m_data_bind_group)
-        return;
+        return false;
     GEWGPUDriver* driver = getWGPUDriver();
     const irr::core::dimension2du& size = driver->getCurrentRenderTargetSize();
     irr::core::recti vp = m_camera->getViewPort();
     vp.clipAgainst(irr::core::recti(0, 0, size.Width, size.Height));
     if (vp.getWidth() <= 0 || vp.getHeight() <= 0)
-        return;
+        return false;
     pass.SetViewport(vp.UpperLeftCorner.X, vp.UpperLeftCorner.Y,
         vp.getWidth(), vp.getHeight(), 0.0f, 1.0f);
     pass.SetScissorRect(vp.UpperLeftCorner.X, vp.UpperLeftCorner.Y,
         vp.getWidth(), vp.getHeight());
+    pass.SetBindGroup(2, getEnvBindGroup());
+    return true;
+}   // beginRendering
 
-    // Image based lighting when the skybox has environment maps
-    const wgpu::BindGroup* env = &g_env_bind_group;
-    if (m_skybox_renderer && getGEConfig()->m_pbr)
+// ----------------------------------------------------------------------------
+const wgpu::BindGroup& GEWGPUDrawCall::getEnvBindGroup()
+{
+    // Environment maps and skybox of the PBR shaders
+    if (m_skybox_renderer)
     {
         const wgpu::BindGroup& skybox_env =
-            m_skybox_renderer->getEnvBindGroup(g_env_layout);
+            m_skybox_renderer->getEnvBindGroup(g_env_layout, g_dummy_env_view);
         if (skybox_env)
-            env = &skybox_env;
+            return skybox_env;
     }
-    const bool ibl = env != &g_env_bind_group;
-    pass.SetBindGroup(2, *env);
-    renderPass(pass, GWPT_SOLID, color_format, ibl);
+    return g_env_bind_group;
+}   // getEnvBindGroup
+
+// ----------------------------------------------------------------------------
+void GEWGPUDrawCall::render(wgpu::RenderPassEncoder& pass,
+                            wgpu::TextureFormat color_format)
+{
+    if (!beginRendering(pass))
+        return;
+    renderPass(pass, GWPT_SOLID, color_format);
     if (m_skybox_renderer)
+    {
         m_skybox_renderer->render(pass, color_format, m_data_bind_group,
-            g_data_layout);
-    renderPass(pass, GWPT_GHOST_DEPTH, color_format, ibl);
-    renderPass(pass, GWPT_TRANSPARENT, color_format, ibl);
+            g_data_layout, false/*deferred*/);
+    }
+    renderPass(pass, GWPT_GHOST_DEPTH, color_format);
+    renderPass(pass, GWPT_TRANSPARENT, color_format);
 }   // render
+
+// ----------------------------------------------------------------------------
+void GEWGPUDrawCall::renderGBuffer(wgpu::RenderPassEncoder& pass)
+{
+    if (!beginRendering(pass))
+        return;
+    renderPass(pass, GWPT_SOLID, GEWGPUDeferredFBO::GBUFFER_FORMAT);
+}   // renderGBuffer
+
+// ----------------------------------------------------------------------------
+void GEWGPUDrawCall::renderLighting(wgpu::RenderPassEncoder& pass,
+                                    GEWGPUDeferredFBO* dfbo)
+{
+    if (!beginRendering(pass))
+        return;
+    GEWGPUShaderManager::Constants c;
+    c.m_ibl = hasIBL();
+    c.m_has_skybox = m_skybox_renderer != NULL;
+    c.m_deferred = true;
+    c.m_specular_levels_minus_one =
+        GEWGPUSkyBoxRenderer::getSpecularLevelsMinusOne();
+    unsigned point_lights = 0;
+    if (m_light_handler)
+    {
+        point_lights = m_light_handler->getLightCount() -
+            m_light_handler->getFullscreenLightCount();
+    }
+    dfbo->renderLighting(pass, m_data_bind_group, g_data_layout,
+        getEnvBindGroup(), g_env_layout, c, m_deferred_pbr_offset,
+        m_pointlight_offset, point_lights);
+    if (m_skybox_renderer)
+    {
+        m_skybox_renderer->render(pass, GEWGPUDeferredFBO::HDR_FORMAT,
+            m_data_bind_group, g_data_layout, true/*deferred*/);
+    }
+}   // renderLighting
+
+// ----------------------------------------------------------------------------
+void GEWGPUDrawCall::renderConvertColor(wgpu::RenderPassEncoder& pass,
+                                        GEWGPUDeferredFBO* dfbo)
+{
+    if (!beginRendering(pass))
+        return;
+    GEWGPUShaderManager::Constants c;
+    c.m_ibl = hasIBL();
+    c.m_deferred = true;
+    dfbo->renderConvertColor(pass, c);
+    renderPass(pass, GWPT_GHOST_DEPTH, GEWGPUDeferredFBO::DISPLACE_COLOR_FORMAT,
+        dfbo);
+    renderPass(pass, GWPT_TRANSPARENT, GEWGPUDeferredFBO::DISPLACE_COLOR_FORMAT,
+        dfbo);
+}   // renderConvertColor
+
+// ----------------------------------------------------------------------------
+void GEWGPUDrawCall::renderDisplaceMask(wgpu::RenderPassEncoder& pass,
+                                        GEWGPUDeferredFBO* dfbo)
+{
+    if (!beginRendering(pass))
+        return;
+    pass.SetBindGroup(3, dfbo->getDisplaceMaskBindGroup());
+    renderPass(pass, GWPT_DISPLACE_MASK, GEWGPUDeferredFBO::MASK_FORMAT, dfbo);
+}   // renderDisplaceMask
+
+// ----------------------------------------------------------------------------
+void GEWGPUDrawCall::renderDisplaceColor(wgpu::RenderPassEncoder& pass,
+                                         GEWGPUDeferredFBO* dfbo,
+                                         wgpu::TextureFormat format)
+{
+    if (!beginRendering(pass))
+        return;
+    GEWGPUShaderManager::Constants c;
+    c.m_ibl = hasIBL();
+    c.m_deferred = true;
+    dfbo->renderDisplaceColor(pass, format, m_data_bind_group, g_data_layout,
+        c, m_displace_color_offset);
+    if (!hasDisplace())
+        return;
+    pass.SetBindGroup(2, getEnvBindGroup());
+    pass.SetBindGroup(3, dfbo->getDisplaceBindGroup());
+    renderPass(pass, GWPT_DISPLACE_COLOR, format, dfbo);
+}   // renderDisplaceColor
 
 // ----------------------------------------------------------------------------
 void GEWGPUDrawCall::renderPass(wgpu::RenderPassEncoder& pass,
                                 GEWGPUPassType pt,
-                                wgpu::TextureFormat color_format, bool ibl)
+                                wgpu::TextureFormat color_format,
+                                const GEWGPUDeferredFBO* dfbo)
 {
     GEWGPUMeshCache* mc = static_cast<GEWGPUMeshCache*>(getWGPUDriver()
         ->getIrrlichtDevice()->getSceneManager()->getMeshCache());
     GEWGPUShaderManager::Constants constants;
     constants.m_has_skybox = m_skybox_renderer != NULL;
-    constants.m_ibl = ibl;
+    constants.m_ibl = hasIBL();
+    constants.m_deferred = m_deferred;
     constants.m_specular_levels_minus_one =
         GEWGPUSkyBoxRenderer::getSpecularLevelsMinusOne();
     WGPURenderPipeline cur_pipeline = NULL;
@@ -883,7 +1073,7 @@ void GEWGPUDrawCall::renderPass(wgpu::RenderPassEncoder& pass,
     for (const DrawCmd& cmd : m_cmds)
     {
         wgpu::RenderPipeline pipeline = getPipeline(cmd.m_shader,
-            cmd.m_skinning, pt, color_format, constants);
+            cmd.m_skinning, pt, color_format, constants, dfbo);
         if (!pipeline)
             continue;
         if (cmd.m_dynamic ? !cmd.m_dynamic->getVertexBuffer() :
@@ -944,6 +1134,7 @@ void GEWGPUDrawCall::destroyShared()
     g_data_layout = nullptr;
     g_env_layout = nullptr;
     g_env_bind_group = nullptr;
+    g_dummy_env_view = nullptr;
 }   // destroyShared
 
 // ----------------------------------------------------------------------------

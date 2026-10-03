@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 @id(0) override u_ibl: bool = true;
 
 @group(0) @binding(16) 

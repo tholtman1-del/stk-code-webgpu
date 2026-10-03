@@ -8,6 +8,7 @@
 #include "ge_spm_buffer.hpp"
 #include "ge_wgpu_2d_renderer.hpp"
 #include "ge_wgpu_camera_scene_node.hpp"
+#include "ge_wgpu_deferred_fbo.hpp"
 #include "ge_wgpu_draw_call.hpp"
 #include "ge_wgpu_dynamic_spm_buffer.hpp"
 #include "ge_wgpu_fbo_texture.hpp"
@@ -119,6 +120,7 @@ void GEWGPUDriver::destroyDriver()
     }
     m_billboard_quad = NULL;
     m_skybox_renderer.reset();
+    m_deferred_fbo.reset();
     GEWGPUDrawCall::destroyShared();
     GEWGPU2dRenderer::destroy();
     GEWGPUShaderManager::destroy();
@@ -345,7 +347,19 @@ bool GEWGPUDriver::endScene()
                 draw_calls.push_back(p.second.get());
         }
     }
-    if (!draw_calls.empty())
+    if (!draw_calls.empty() && draw_calls[0]->isDeferred())
+    {
+        for (GEWGPUDrawCall* dc : draw_calls)
+            dc->upload();
+        renderDeferred(encoder, draw_calls, color.view);
+        for (GEWGPUDrawCall* dc : draw_calls)
+        {
+            PrimitivesDrawn += dc->getPolyCount();
+            dc->reset();
+        }
+        color.loadOp = wgpu::LoadOp::Load;
+    }
+    else if (!draw_calls.empty())
     {
         for (GEWGPUDrawCall* dc : draw_calls)
             dc->upload();
@@ -452,6 +466,99 @@ void GEWGPUDriver::setViewPort(const core::rect<s32>& area)
             cam->setViewPort(area);
     }
 }   // setViewPort
+
+// ----------------------------------------------------------------------------
+void GEWGPUDriver::renderDeferred(wgpu::CommandEncoder& encoder,
+                                  const std::vector<GEWGPUDrawCall*>& draw_calls,
+                                  const wgpu::TextureView& output)
+{
+    if (!m_deferred_fbo || m_deferred_fbo->getSize() != ScreenSize)
+        m_deferred_fbo.reset(new GEWGPUDeferredFBO(ScreenSize));
+    GEWGPUDeferredFBO* dfbo = m_deferred_fbo.get();
+
+    auto color = [](const wgpu::TextureView& view, wgpu::LoadOp load_op)
+    {
+        wgpu::RenderPassColorAttachment c;
+        c.view = view;
+        c.loadOp = load_op;
+        c.storeOp = wgpu::StoreOp::Store;
+        c.clearValue = { 0.0, 0.0, 0.0, 0.0 };
+        return c;
+    };
+    wgpu::RenderPassDepthStencilAttachment depth;
+    depth.view = dfbo->getDepthView();
+    wgpu::RenderPassDepthStencilAttachment depth_read_only;
+    depth_read_only.view = dfbo->getDepthView();
+    depth_read_only.depthReadOnly = true;
+    depth_read_only.depthClearValue = 1.0f;
+    wgpu::RenderPassDescriptor desc;
+
+    // 1. G-buffer
+    std::array<wgpu::RenderPassColorAttachment, 2> gbuffer =
+    {{
+        color(dfbo->getColorView(), wgpu::LoadOp::Clear),
+        color(dfbo->getNormalView(), wgpu::LoadOp::Clear)
+    }};
+    depth.depthLoadOp = wgpu::LoadOp::Clear;
+    depth.depthStoreOp = wgpu::StoreOp::Store;
+    depth.depthClearValue = 1.0f;
+    desc.colorAttachmentCount = gbuffer.size();
+    desc.colorAttachments = gbuffer.data();
+    desc.depthStencilAttachment = &depth;
+    wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&desc);
+    for (GEWGPUDrawCall* dc : draw_calls)
+        dc->renderGBuffer(pass);
+    pass.End();
+
+    // 2. Lighting and skybox into HDR, the depth is also sampled
+    wgpu::RenderPassColorAttachment hdr =
+        color(dfbo->getHDRView(), wgpu::LoadOp::Clear);
+    desc.colorAttachmentCount = 1;
+    desc.colorAttachments = &hdr;
+    desc.depthStencilAttachment = &depth_read_only;
+    pass = encoder.BeginRenderPass(&desc);
+    for (GEWGPUDrawCall* dc : draw_calls)
+        dc->renderLighting(pass, dfbo);
+    pass.End();
+
+    // 3. Convert color, then ghost and transparent meshes
+    wgpu::RenderPassColorAttachment displace_color =
+        color(dfbo->getDisplaceColorView(), wgpu::LoadOp::Clear);
+    depth.depthLoadOp = wgpu::LoadOp::Load;
+    desc.colorAttachments = &displace_color;
+    desc.depthStencilAttachment = &depth;
+    pass = encoder.BeginRenderPass(&desc);
+    for (GEWGPUDrawCall* dc : draw_calls)
+        dc->renderConvertColor(pass, dfbo);
+    pass.End();
+
+    // 4. Displace mask
+    bool has_displace = false;
+    for (GEWGPUDrawCall* dc : draw_calls)
+        has_displace |= dc->hasDisplace();
+    if (has_displace)
+    {
+        wgpu::RenderPassColorAttachment mask =
+            color(dfbo->getMaskView(), wgpu::LoadOp::Clear);
+        desc.colorAttachments = &mask;
+        desc.depthStencilAttachment = &depth_read_only;
+        pass = encoder.BeginRenderPass(&desc);
+        for (GEWGPUDrawCall* dc : draw_calls)
+            dc->renderDisplaceMask(pass, dfbo);
+        pass.End();
+    }
+
+    // 5. Displace color to the output
+    wgpu::RenderPassColorAttachment out = color(output, wgpu::LoadOp::Clear);
+    video::SColorf cf(m_clear_color);
+    out.clearValue = { cf.r, cf.g, cf.b, cf.a };
+    desc.colorAttachments = &out;
+    desc.depthStencilAttachment = &depth_read_only;
+    pass = encoder.BeginRenderPass(&desc);
+    for (GEWGPUDrawCall* dc : draw_calls)
+        dc->renderDisplaceColor(pass, dfbo, m_surface_format);
+    pass.End();
+}   // renderDeferred
 
 // ----------------------------------------------------------------------------
 const wgpu::TextureView& GEWGPUDriver::getDepthView(

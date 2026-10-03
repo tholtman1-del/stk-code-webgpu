@@ -30,7 +30,8 @@ private:
 
     wgpu::PipelineLayout m_pipeline_layout;
 
-    std::map<wgpu::TextureFormat, wgpu::RenderPipeline> m_pipelines;
+    std::map<std::pair<wgpu::TextureFormat, bool>, wgpu::RenderPipeline>
+        m_pipelines;
 
     irr::video::SColor m_skytop_color;
 
@@ -46,11 +47,14 @@ public:
     void render(wgpu::RenderPassEncoder& pass,
                 wgpu::TextureFormat color_format,
                 const wgpu::BindGroup& data,
-                const wgpu::BindGroupLayout& data_layout);
+                const wgpu::BindGroupLayout& data_layout, bool deferred);
     // ------------------------------------------------------------------------
-    /** Diffuse and specular environment maps (group 2 of the PBR shaders),
-     *  or a null bind group without image based lighting. */
-    const wgpu::BindGroup& getEnvBindGroup(const wgpu::BindGroupLayout& layout);
+    /** Group 2 of the PBR shaders: diffuse and specular environment maps
+     *  (dummy without image based lighting), skybox and its sRGB view. */
+    const wgpu::BindGroup& getEnvBindGroup(const wgpu::BindGroupLayout& layout,
+                                           const wgpu::TextureView& dummy);
+    // ------------------------------------------------------------------------
+    bool hasEnvironmentMaps() const         { return m_diffuse_env != nullptr; }
     // ------------------------------------------------------------------------
     void reset()                                           { m_skybox = NULL; }
     // ------------------------------------------------------------------------

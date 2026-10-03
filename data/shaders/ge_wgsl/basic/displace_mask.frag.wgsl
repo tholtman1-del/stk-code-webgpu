@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 struct FragmentOutput {
     @location(0) member: vec2<f32>,
     @location(1) member_1: vec4<f32>,

@@ -32,6 +32,7 @@ class GESPMBuffer;
 class GEVulkanAnimatedMeshSceneNode;
 class GEVulkanLightHandler;
 class GEWGPUCameraSceneNode;
+class GEWGPUDeferredFBO;
 class GEWGPUDynamicSPMBuffer;
 class GEWGPUSkyBoxRenderer;
 
@@ -41,6 +42,9 @@ enum GEWGPUPassType : unsigned
     // Depth of ghost (transparent) karts, so only their front faces show
     GWPT_GHOST_DEPTH,
     GWPT_TRANSPARENT,
+    // Deferred rendering only
+    GWPT_DISPLACE_MASK,
+    GWPT_DISPLACE_COLOR,
     GWPT_COUNT
 };
 
@@ -96,6 +100,13 @@ private:
 
     GEWGPUCameraSceneNode* m_camera;
 
+    // Deferred rendering (with displace), decided in prepare()
+    bool m_deferred;
+
+    // Push constants offsets of the fullscreen deferred passes
+    uint32_t m_deferred_pbr_offset, m_pointlight_offset,
+        m_displace_color_offset;
+
     std::vector<DrawCmd> m_cmds;
 
     std::vector<ObjectData> m_objects;
@@ -120,7 +131,15 @@ private:
                       wgpu::BufferUsage usage, const char* label);
     // ------------------------------------------------------------------------
     void renderPass(wgpu::RenderPassEncoder& pass, GEWGPUPassType pt,
-                    wgpu::TextureFormat color_format, bool ibl);
+                    wgpu::TextureFormat color_format,
+                    const GEWGPUDeferredFBO* dfbo = NULL);
+    // ------------------------------------------------------------------------
+    /** Sets viewport and environment maps, false if nothing is visible. */
+    bool beginRendering(wgpu::RenderPassEncoder& pass);
+    // ------------------------------------------------------------------------
+    const wgpu::BindGroup& getEnvBindGroup();
+    // ------------------------------------------------------------------------
+    bool hasIBL();
 public:
     // ------------------------------------------------------------------------
     GEWGPUDrawCall();
@@ -146,6 +165,25 @@ public:
     // ------------------------------------------------------------------------
     void render(wgpu::RenderPassEncoder& pass,
                 wgpu::TextureFormat color_format);
+    // ------------------------------------------------------------------------
+    bool isDeferred() const                              { return m_deferred; }
+    // ------------------------------------------------------------------------
+    bool hasDisplace() const;
+    // ------------------------------------------------------------------------
+    /** Deferred passes, see GEWGPUDeferredFBO. */
+    void renderGBuffer(wgpu::RenderPassEncoder& pass);
+    // ------------------------------------------------------------------------
+    void renderLighting(wgpu::RenderPassEncoder& pass, GEWGPUDeferredFBO* dfbo);
+    // ------------------------------------------------------------------------
+    void renderConvertColor(wgpu::RenderPassEncoder& pass,
+                            GEWGPUDeferredFBO* dfbo);
+    // ------------------------------------------------------------------------
+    void renderDisplaceMask(wgpu::RenderPassEncoder& pass,
+                            GEWGPUDeferredFBO* dfbo);
+    // ------------------------------------------------------------------------
+    void renderDisplaceColor(wgpu::RenderPassEncoder& pass,
+                             GEWGPUDeferredFBO* dfbo,
+                             wgpu::TextureFormat format);
     // ------------------------------------------------------------------------
     GEWGPUCameraSceneNode* getCamera() const               { return m_camera; }
     // ------------------------------------------------------------------------

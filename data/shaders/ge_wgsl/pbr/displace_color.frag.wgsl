@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 struct Constants {
     m_has_displace: u32,
 }

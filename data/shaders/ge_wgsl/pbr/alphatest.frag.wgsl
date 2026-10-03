@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 struct LightData {
     m_position_radius: vec4<f32>,
     m_color_inverse_square_range: vec4<f32>,

@@ -88,6 +88,7 @@ set(GE_SOURCES
     src/gl.c
     src/ge_wgpu_2d_renderer.cpp
     src/ge_wgpu_camera_scene_node.cpp
+    src/ge_wgpu_deferred_fbo.cpp
     src/ge_wgpu_draw_call.cpp
     src/ge_wgpu_driver.cpp
     src/ge_wgpu_dynamic_spm_buffer.cpp
