@@ -97,6 +97,17 @@ function log(line, isError) {
   if (logTail.length > 40) logTail.shift();
 }
 
+// Progress of the parallel downloads (engine and game data), shown together
+const downloads = {};
+function downloadProgress(name, loaded, total) {
+  downloads[name] = { loaded, total };
+  let sum = 0, sumTotal = 0;
+  for (const d of Object.values(downloads)) { sum += d.loaded; sumTotal += d.total; }
+  const mb = (n) => (n / 1048576).toFixed(0);
+  if (sumTotal) setStatus(`Downloading… ${mb(Math.min(sum, sumTotal))} / ${mb(sumTotal)} MB`, sum / sumTotal);
+  else setStatus(`Downloading… ${mb(sum)} MB`);
+}
+
 function setStatus(text, fraction) {
   if (failed) return;
   ui.status.textContent = text;
@@ -236,13 +247,11 @@ function instantiateWithProgress(imports, onInstance) {
     const response = await fetch(url, { credentials: 'same-origin' });
     if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
     const total = Number(response.headers.get('Content-Length')) || 0;
-    const mb = (n) => (n / 1048576).toFixed(1);
     let loaded = 0;
     const progress = new TransformStream({
       transform(chunk, controller) {
         loaded += chunk.byteLength;
-        if (total) setStatus(`Downloading game engine… ${mb(Math.min(loaded, total))} / ${mb(total)} MB`, loaded / total);
-        else setStatus(`Downloading game engine… ${mb(loaded)} MB`);
+        downloadProgress('engine', loaded, total);
         controller.enqueue(chunk);
       },
     });
@@ -266,15 +275,53 @@ function instantiateWithProgress(imports, onInstance) {
 // ---------------------------------------------------------------------------
 // File system
 
-// HOOK (STATUS.md Next item 6): make the game data available before main().
-// Called from preRun with the module; the returned promise is awaited (as a
-// run dependency) before the runtime starts. FileManager looks for
-// DATA_ROOT + '/data/supertuxkart.<version>'. Start any download as early as
-// possible (it can run in parallel with the wasm download) and only mount or
-// write the files here.
+// Game data, packed by tools/webgpu/package_data.py into stk-data.bin and a
+// manifest of [path, offset, size]. The download starts before the engine's
+// and runs in parallel with it; mountGameData() writes the files into the
+// in-memory file system before main().
+const DATA_MANIFEST = 'stk-data.json';
+const DATA_BLOB = 'stk-data.bin';
+let gameData = null;
+
+async function downloadGameData() {
+  const manifestResponse = await fetch(DATA_MANIFEST);
+  if (!manifestResponse.ok) throw new Error(`${DATA_MANIFEST}: HTTP ${manifestResponse.status}`);
+  const manifest = await manifestResponse.json();
+  const response = await fetch(DATA_BLOB);
+  if (!response.ok) throw new Error(`${DATA_BLOB}: HTTP ${response.status}`);
+  const blob = new Uint8Array(manifest.size);
+  const reader = response.body.getReader();
+  let loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (loaded + value.byteLength > blob.byteLength)
+      throw new Error(`${DATA_BLOB} is larger than ${DATA_MANIFEST} says`);
+    blob.set(value, loaded);
+    loaded += value.byteLength;
+    downloadProgress('data', loaded, manifest.size);
+  }
+  if (loaded !== blob.byteLength)
+    throw new Error(`${DATA_BLOB} is truncated (${loaded} of ${blob.byteLength} bytes)`);
+  return { manifest, blob };
+}
+
 async function mountGameData(mod) {
-  // Not packaged yet: nothing is mounted, so FileManager will report that the
-  // data directory is missing.
+  const { manifest, blob } = await gameData;
+  setStatus('Unpacking game data…');
+  const { FS } = mod;
+  for (const dir of manifest.dirs || []) FS.mkdirTree(`${DATA_ROOT}/${dir}`);
+  const dirs = new Set();
+  for (const [path, offset, size] of manifest.files) {
+    const full = `${DATA_ROOT}/${path}`;
+    const dir = full.substring(0, full.lastIndexOf('/'));
+    if (!dirs.has(dir)) {
+      FS.mkdirTree(dir);
+      dirs.add(dir);
+    }
+    // canOwn: the file keeps a view into the blob instead of a copy
+    FS.writeFile(full, blob.subarray(offset, offset + size), { canOwn: true });
+  }
 }
 
 // Runs a promise-returning step as a run dependency, so the runtime (and
@@ -291,6 +338,7 @@ function preRun(mod) {
 
   // Paths read by FileManager (src/io/file_manager.cpp)
   ENV.SUPERTUXKART_DATADIR = DATA_ROOT;
+  ENV.SUPERTUXKART_ASSETS_DIR = DATA_ROOT + '/assets';
   ENV.XDG_CONFIG_HOME = PERSISTENT_ROOT + '/config';
   ENV.XDG_DATA_HOME = PERSISTENT_ROOT + '/data';
   ENV.XDG_CACHE_HOME = '/tmp/cache';  // in memory, rebuilt every session
@@ -315,6 +363,8 @@ async function start() {
   const device = await createDevice();
   if (!device) return;
 
+  gameData = downloadGameData();
+  gameData.catch(() => {});  // reported by mountGameData
   setStatus('Loading game engine…');
   try {
     await new Promise((resolve, reject) => {
@@ -339,6 +389,11 @@ async function start() {
     print: (text) => log(text),
     printErr: (text) => log(text, true),
     setStatus: (text) => { if (text) setStatus(text); },
+    onExit: (code) => {
+      if (code !== 0) {
+        showError('The game stopped', `SuperTuxKart exited with code ${code}.`);
+      }
+    },
     onAbort: (what) => {
       showError('The game stopped unexpectedly',
         'The game hit a fatal error. <a href="">Reload the page</a> to restart.',
