@@ -98,14 +98,18 @@ Cloud session notes:
 - Shader conversion: normals and tangents (A2B10G10R10 snorm, no WebGPU
   vertex format) are read as u32 and unpacked in WGSL; push constants become
   a uniform at `@group(1) @binding(4)` with a dynamic offset.
+- Deferred rendering (`GEWGPUDeferredFBO`), used like the Vulkan renderer
+  only for tracks with displace (water) materials: G-buffer, deferred PBR
+  and point lights, skybox, convert to the displace color target with ghost
+  and transparent meshes, displace mask, displace color to the output. The
+  Vulkan subpasses are separate render passes. Tested on zengarden and
+  gran_paradiso_island. Fragment WGSL turns off `derivative_uniformity`.
 
 ## Next
 
-1. Deferred rendering: deferred FBO, deferred_pbr / point light passes,
-   displace (water; falls back to alphablend now), screen space reflections
-   (hiz_depth). naga cannot read the specialization constants of
-   deferred_pbr.frag and displace_mask.frag, compile_shaders.py freezes them
-   to the defaults, which needs a fix first. Also the PBR depth prepass
+1. Screen space reflections (`u_ssr`, `hiz_depth.comp`): the deferred FBO
+   binds transparent placeholders for the SSR and HiZ textures; also the
+   PBR depth prepass
 2. Performance: async texture decoding, compressed textures, asset streaming
    (the whole 762 MB package is downloaded and held in memory), HiDPI
 3. Smaller issues: STK's log colour codes show up in the browser console;
