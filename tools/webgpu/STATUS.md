@@ -127,7 +127,8 @@ Cloud session notes:
   SSR target in the deferred FBO, `GEWGPUHiZDepth` builds the min depth
   pyramid per camera with `hiz_depth.comp`.
 - PBR depth prepass (`GWPT_DEPTH`, then solid with an equal depth test), as
-  the Vulkan renderer on non-tiled GPUs.
+  the Vulkan renderer on non-tiled GPUs (tiled: Apple, ARM, Qualcomm,
+  Imagination, Broadcom adapters from `GPUDevice.adapterInfo`).
 - Textures are decoded (and mipmapped) by loader threads
   (`GEWGPUTextureLoader`); files are read on the creating thread, the
   getters wait for decoding, `getView()` uploads on demand. Hacienda race
@@ -154,5 +155,3 @@ Cloud session notes:
    compressing offline in `package_data.py` would fix both.
    Streaming: one request per file while a track loads (could be bundled
    per track). Streamed files are dropped from memory when closed.
-   The depth prepass could be skipped on tiled GPUs (Apple, mobile) if the
-   adapter info allows telling them apart

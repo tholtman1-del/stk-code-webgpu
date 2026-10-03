@@ -244,9 +244,10 @@ wgpu::RenderPipeline getPipeline(const std::string& shader, bool skinning,
     bool additive = material->m_additive;
     wgpu::CompareFunction depth_compare = wgpu::CompareFunction::Less;
     bool valid = false;
-    // Without PBR the prepass makes rendering slower (see
-    // GEVulkanDrawCall::doDepthOnlyRenderingFirst)
+    // Without PBR the prepass makes rendering slower and tiled GPUs do not
+    // need it (see GEVulkanDrawCall::doDepthOnlyRenderingFirst)
     const bool prepass = getGEConfig()->m_pbr &&
+        !getWGPUDriver()->isTiledGPU() &&
         !material->m_depth_only_fragment_shader.empty();
     switch (pt)
     {

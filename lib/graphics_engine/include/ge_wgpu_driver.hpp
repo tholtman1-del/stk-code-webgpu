@@ -242,6 +242,9 @@ public:
      *  render to texture. */
     float getRenderScale() const;
     // ------------------------------------------------------------------------
+    /** Tile based GPU (Apple, ARM, Qualcomm...), from the adapter vendor. */
+    bool isTiledGPU() const                            { return m_tiled_gpu; }
+    // ------------------------------------------------------------------------
     /** Size the 3D scene is rendered at: the render target texture, or the
      *  screen size times the render scale. */
     core::dimension2du getSceneSize() const;
@@ -385,6 +388,7 @@ private:
     GEVulkanSampler m_mesh_sampler;
     uint32_t m_max_texture_size;
     bool m_bc_textures;
+    bool m_tiled_gpu;
     core::stringc m_vendor_info;
 
     video::SColor m_clear_color;

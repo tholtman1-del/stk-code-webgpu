@@ -84,7 +84,27 @@ GEWGPUDriver::GEWGPUDriver(const SIrrlichtCreationParameters& params,
     CNullDriver::OnResize(getPixelSize(params.WindowSize));
     configureSurface();
 
+    // GPUDevice.adapterInfo, e.g. "apple" / "metal-3"
     m_vendor_info = "WebGPU";
+    m_tiled_gpu = false;
+    wgpu::AdapterInfo info;
+    if (m_device.GetAdapterInfo(&info) == wgpu::Status::Success)
+    {
+        std::string vendor(info.vendor.data, info.vendor.length);
+        std::string architecture(info.architecture.data,
+            info.architecture.length);
+        m_vendor_info += (" " + vendor + " " + architecture).c_str();
+        // Tile based GPUs, where a depth prepass costs more than it saves
+        // (TILED_GPU in the Vulkan renderer)
+        for (const char* tiled : { "apple", "arm", "qualcomm",
+            "imagination", "img-tec", "broadcom" })
+        {
+            if (vendor == tiled)
+                m_tiled_gpu = true;
+        }
+    }
+    os::Printer::log("WebGPU adapter", (m_vendor_info +
+        (m_tiled_gpu ? " (tiled)" : "")).c_str());
     m_clear_color = video::SColor(0);
     m_clip = getFullscreenClip();
     os::Printer::log("WebGPU surface format", m_surface_format ==
