@@ -81,7 +81,7 @@ function(stk_web_configure_target target)
         -sSTACK_SIZE=4MB -sDEFAULT_PTHREAD_STACK_SIZE=1MB
         -sFETCH=1 -sFORCE_FILESYSTEM=1 -lidbfs.js
         -sENVIRONMENT=web,worker -sEXIT_RUNTIME=0
-        -sEXPORTED_RUNTIME_METHODS=callMain,FS,IDBFS,ENV
+        -sEXPORTED_RUNTIME_METHODS=callMain,FS,IDBFS,ENV,UTF8ToString
         -sINVOKE_RUN=0
         -sMODULARIZE=1 -sEXPORT_NAME=createSTK)
     set_target_properties(${target} PROPERTIES SUFFIX ".js")

@@ -121,15 +121,16 @@ function setStatus(text, fraction) {
 }
 
 // Shows a blocking error. `html` is trusted markup written in this file;
-// `details` is shown as plain text.
-function showError(title, html, details) {
+// `details` is shown as plain text. isError false is a normal stop (no log).
+function showError(title, html, details, isError = true) {
   if (failed) return;
   failed = true;
   ui.overlay.hidden = false;
-  ui.overlay.classList.add('error');
+  if (isError) ui.overlay.classList.add('error');
   ui.title.textContent = title;
   ui.status.innerHTML = html;
-  const tail = logTail.length ? '\n\nLast output:\n' + logTail.join('\n') : '';
+  const tail = isError && logTail.length ?
+    '\n\nLast output:\n' + logTail.join('\n') : '';
   ui.details.textContent = ((details || '') + tail).trim();
 }
 
@@ -391,6 +392,19 @@ async function start() {
     onExit: (code) => {
       if (code !== 0) {
         showError('The game stopped', `SuperTuxKart exited with code ${code}.`);
+      }
+    },
+    // Called by MainLoop when the main loop stops (quit, or an exception
+    // in a frame)
+    onGameStopped: (error) => {
+      if (error) {
+        showError('The game stopped unexpectedly',
+          'The game hit an error. <a href="">Reload the page</a> to restart.',
+          error);
+      } else {
+        showError('SuperTuxKart was closed',
+          'Your progress and settings were saved. <a href="">Reload the page</a> to play again.',
+          '', false);
       }
     },
     onAbort: (what) => {

@@ -433,8 +433,21 @@ void MainLoop::run()
     emscripten_set_main_loop_arg([](void* arg)
         {
             MainLoop* ml = (MainLoop*)arg;
-            if (!ml->m_abort)
-                ml->runFrame();
+            static std::string error;
+            // main() is no longer on the stack to catch exceptions, so stop
+            // the same way as its catch block
+            try
+            {
+                if (!ml->m_abort)
+                    ml->runFrame();
+            }
+            catch (std::exception& e)
+            {
+                Log::error("main", "Exception caught : %s.", e.what());
+                Log::error("main", "Aborting SuperTuxKart.");
+                error = e.what();
+                ml->m_abort = true;
+            }
             if (!ml->m_abort)
                 return;
             emscripten_cancel_main_loop();
@@ -447,6 +460,12 @@ void MainLoop::run()
             if (user_config)
                 user_config->saveConfig();
             Log::flushBuffers();
+            // Let the page show that the game stopped (empty: quit by the
+            // player)
+            EM_ASM({
+                if (Module.onGameStopped)
+                    Module.onGameStopped(UTF8ToString($0));
+            }, error.c_str());
         }, this, 0, true);
 #else
     while (!m_abort)

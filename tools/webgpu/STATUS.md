@@ -109,6 +109,9 @@ Cloud session notes:
   pyramid per camera with `hiz_depth.comp`.
 - PBR depth prepass (`GWPT_DEPTH`, then solid with an equal depth test), as
   the Vulkan renderer on non-tiled GPUs.
+- Browser logs go to `console.log/warn/error` without terminal colour codes.
+  Exceptions in a frame are caught like `main()` does and stop the game;
+  the page shows `Module.onGameStopped` (also after quitting).
 
 ## Next
 
@@ -116,5 +119,3 @@ Cloud session notes:
    (the whole 762 MB package is downloaded and held in memory), HiDPI.
    The depth prepass could be skipped on tiled GPUs (Apple, mobile) if the
    adapter info allows telling them apart
-2. Smaller issues: STK's log colour codes show up in the browser console;
-   C++ exceptions inside a frame are not caught (`MainLoop::runFrame()`)

@@ -25,6 +25,7 @@
 
 #include <cstdio>
 #include <ctime>
+#include <string>
 #include <stdio.h>
 
 #ifdef ANDROID
@@ -35,13 +36,22 @@
 #include "../../../lib/irrlicht/source/Irrlicht/CIrrDeviceiOS.h"
 #endif
 
+#ifdef __EMSCRIPTEN__
+#  include <emscripten/emscripten.h>
+#endif
+
 #ifdef WIN32
 #  define WIN32_LEAN_AND_MEAN
 #  include <windows.h>
 #endif
 
 Log::LogLevel Log::m_min_log_level = Log::LL_VERBOSE;
+#ifdef __EMSCRIPTEN__
+// The browser console has its own levels (console.warn / console.error)
+bool          Log::m_no_colors     = true;
+#else
 bool          Log::m_no_colors     = false;
+#endif
 FILE*         Log::m_file_stdout   = NULL;
 size_t        Log::m_buffer_size = 1;
 bool          Log::m_console_log = true;
@@ -265,6 +275,19 @@ void Log::writeLine(const char *line, int level)
             __android_log_print(alp, "SuperTuxKart", "%s", line);
 #elif defined(IOS_STK)
             CIrrDeviceiOS::debugPrint(line);
+#elif defined(__EMSCRIPTEN__)
+            int flags = EM_LOG_CONSOLE;
+            if (level >= LL_ERROR)
+                flags |= EM_LOG_ERROR;
+            else if (level == LL_WARN)
+                flags |= EM_LOG_WARN;
+            else if (level <= LL_DEBUG)
+                flags |= EM_LOG_DEBUG;
+            // console.* adds its own line break
+            std::string msg(line);
+            if (!msg.empty() && msg.back() == '\n')
+                msg.pop_back();
+            emscripten_log(flags, "%s", msg.c_str());
 #else
             printf("%s", line);
             fflush(stdout);
