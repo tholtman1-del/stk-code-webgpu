@@ -12,8 +12,12 @@ data parts, stk-files/ and stk-bundles/ (hard links where possible), plus:
 Hosts that ignore _headers (GitHub Pages) get the COOP/COEP headers from the
 coi-sw.js service worker. Every file is below 25 MiB (Cloudflare's limit).
 Upload the whole directory; the page must be served over https.
+
+--no-bundles leaves out the track bundles (stk-bundles/, about 600 MB), so
+the site fits in GitHub Pages' 1 GB limit; tracks then load file by file.
 """
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -46,6 +50,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--build", default=os.path.join(ROOT, "build-web", "stk", "bin"))
     parser.add_argument("--out", default=os.path.join(ROOT, "build-web", "dist"))
+    parser.add_argument("--no-bundles", action="store_true",
+                        help="leave out the track bundles (GitHub Pages size limit)")
     args = parser.parse_args()
 
     needed = ["supertuxkart.js", "supertuxkart.wasm", "stk-data.json"]
@@ -60,23 +66,37 @@ def main():
         shutil.copyfile(os.path.join(WEB, name), os.path.join(args.out, name))
     count = 0
     biggest = 0
+    total = 0
     for dirpath, _, filenames in os.walk(args.build):
         for name in filenames:
             src = os.path.join(dirpath, name)
             rel = os.path.relpath(src, args.build)
             # Only what the page loads (no worker or map leftovers)
+            bundle = rel.startswith("stk-bundles" + os.sep)
             if not (rel.startswith("stk-files" + os.sep) or
-                    rel.startswith("stk-bundles" + os.sep) or
+                    (bundle and not args.no_bundles) or
                     name in needed or (name.startswith("stk-data.") and
                     name.endswith(".bin"))):
                 continue
-            link_or_copy(src, os.path.join(args.out, rel))
+            dst = os.path.join(args.out, rel)
+            if name == "stk-data.json" and args.no_bundles:
+                # The page must not request the missing bundles
+                with open(src) as f:
+                    manifest = json.load(f)
+                manifest["bundles"] = {}
+                with open(dst, "w") as f:
+                    json.dump(manifest, f, separators=(",", ":"))
+            else:
+                link_or_copy(src, dst)
             count += 1
-            biggest = max(biggest, os.path.getsize(src))
+            size = os.path.getsize(dst)
+            biggest = max(biggest, size)
+            total += size
     with open(os.path.join(args.out, "_headers"), "w") as f:
         f.write(HEADERS)
     open(os.path.join(args.out, ".nojekyll"), "w").close()
-    print(f"{count + 4} files in {args.out}, largest {biggest / 1048576:.1f} MB")
+    print(f"{count + 4} files, {total / 1048576:.0f} MB in {args.out}, "
+          f"largest {biggest / 1048576:.1f} MB")
 
 
 if __name__ == "__main__":

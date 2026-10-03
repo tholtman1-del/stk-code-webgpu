@@ -5,6 +5,30 @@
 [![Switch build status](https://github.com/supertuxkart/stk-code/actions/workflows/switch.yml/badge.svg)](https://github.com/supertuxkart/stk-code/actions/workflows/switch.yml)
 [![#supertuxkart on the libera IRC network](https://img.shields.io/badge/libera-%23supertuxkart-brightgreen.svg)](https://web.libera.chat/?channels=#supertuxkart)
 
+## WebGPU browser version (this fork)
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/F2J527ZLUN)
+
+This fork runs SuperTuxKart in the browser with a WebGPU renderer (no WebGL),
+built with Emscripten. The `webgpu` branch has the port; its status, design
+and build steps are in [tools/webgpu/STATUS.md](tools/webgpu/STATUS.md).
+
+- **Demo:** <https://tholtman1-del.github.io/stk-code-webgpu/> (a sample to
+  show that it works, published by the `WebGPU demo on GitHub Pages` workflow;
+  tracks load file by file there, see below)
+- **Browser:** a recent Chrome or Edge on Windows, macOS or ChromeOS works
+  best; Safari and Firefox with WebGPU should work. On Linux, Chrome needs
+  WebGPU enabled in `chrome://flags`.
+- **Host it yourself:** build it as described in
+  [STATUS.md](tools/webgpu/STATUS.md), then upload the folder made by
+  `python3 tools/webgpu/make_dist.py` to any static https host. Cloudflare
+  Pages and Netlify read the included `_headers` file; elsewhere a service
+  worker adds the cross-origin isolation headers the game needs. With your
+  own host keep the track bundles (leave out `--no-bundles`) so tracks load
+  with a few requests instead of about a hundred.
+
+Online multiplayer is not supported in the browser yet.
+
 SuperTuxKart is a free kart racing game. It focuses on fun and not on realistic kart physics. Instructions can be found on the in-game help page.
 
 The SuperTuxKart homepage can be found at <https://supertuxkart.net/>. There is also our [FAQ](https://supertuxkart.net/FAQ) and information on how get in touch with the [community](https://supertuxkart.net/Community).

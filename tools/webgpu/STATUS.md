@@ -27,7 +27,10 @@ python3 tools/webgpu/make_dist.py   # -> build-web/dist, upload all of it
 
 `_headers` sets COOP/COEP on Netlify and Cloudflare Pages; elsewhere (GitHub
 Pages, plain servers) the `coi-sw.js` service worker adds them after one
-reload. Every file is at most 24 MiB (the core package is split into
+reload. `--no-bundles` leaves out the track bundles to fit GitHub
+Pages' 1 GB limit (772 MB); the `WebGPU demo on GitHub Pages` workflow
+(`.github/workflows/webgpu-pages.yml`, started by hand) builds everything
+and publishes that. Every file is at most 24 MiB (the core package is split into
 `stk-data.N.bin` parts, downloaded in parallel).
 
 Cloud session notes:
