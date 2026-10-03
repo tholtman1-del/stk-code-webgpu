@@ -1,4 +1,4 @@
-const u_ibl: bool = true;
+@id(0) override u_ibl: bool = true;
 
 var<private> o_color: vec4<f32>;
 @group(0) @binding(16) 

@@ -2,13 +2,9 @@
 
 #include "ge_main.hpp"
 #include "ge_occlusion_culling.hpp"
-#include "ge_vulkan_driver.hpp"
-#include "ge_vulkan_fbo_texture.hpp"
-#include "ge_vulkan_skybox_renderer.hpp"
 
 #include "ILightSceneNode.h"
 #include "ISceneManager.h"
-#include "IrrlichtDevice.h"
 
 #include <algorithm>
 #include <cmath>
@@ -24,8 +20,7 @@ void GEVulkanLightHandler::prepare()
     m_buffer = {};
     m_lights.clear();
     m_fullscreen_light_count = 0;
-    video::SColorf c = m_vk->getIrrlichtDevice()->getSceneManager()
-        ->getAmbientLight();
+    video::SColorf c = m_scene_manager->getAmbientLight();
     m_buffer.m_ambient_color.X = c.r * c.a;
     m_buffer.m_ambient_color.Y = c.g * c.a;
     m_buffer.m_ambient_color.Z = c.b * c.a;
@@ -40,12 +35,12 @@ void GEVulkanLightHandler::prepare()
 
 // ----------------------------------------------------------------------------
 void GEVulkanLightHandler::generate(const irr::core::vector3df& cam_pos,
-                                    GEVulkanSkyBoxRenderer* skybox)
+                                    const irr::video::SColor* skytop,
+                                    bool deferred)
 {
-    if (skybox)
+    if (skytop)
     {
-        irr::video::SColorf c(
-            srgb255ToLinearFromSColor(skybox->getSkytopColor()));
+        irr::video::SColorf c(srgb255ToLinearFromSColor(*skytop));
         m_buffer.m_skytop_color.X = c.r;
         m_buffer.m_skytop_color.Y = c.g;
         m_buffer.m_skytop_color.Z = c.b;
@@ -64,9 +59,7 @@ void GEVulkanLightHandler::generate(const irr::core::vector3df& cam_pos,
     if (m_lights.empty())
         return;
 
-    GEVulkanFBOTexture* t =
-        static_cast<GEVulkanDriver*>(getDriver())->getRTTTexture();
-    if (t && t->isDeferredFBO())
+    if (deferred)
     {
         auto i = std::partition(m_lights.begin(), m_lights.end(),
         [cam_pos](const GELight& l)
@@ -78,7 +71,7 @@ void GEVulkanLightHandler::generate(const irr::core::vector3df& cam_pos,
         m_fullscreen_light_count = std::distance(m_lights.begin(), i);
     }
     // Deferred fbo supports light culling using depth test
-    if (hasOcclusionCulling() && (!t || !t->isDeferredFBO()))
+    if (hasOcclusionCulling() && !deferred)
     {
         auto l = m_lights.begin();
         auto rl = m_buffer.m_rendering_lights.begin();

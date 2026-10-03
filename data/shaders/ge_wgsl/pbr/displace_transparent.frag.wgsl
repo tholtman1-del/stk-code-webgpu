@@ -14,8 +14,8 @@ struct CameraBuffer {
     m_padding: vec2<f32>,
 }
 
-const u_ibl: bool = true;
-const u_ssr: bool = false;
+@id(0) override u_ibl: bool = true;
+@id(4) override u_ssr: bool = false;
 
 @group(0) @binding(16) 
 var f_mesh_texture_0_sampler: sampler;

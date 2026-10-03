@@ -34,9 +34,9 @@ struct FragmentOutput {
     @location(1) member_1: vec4<f32>,
 }
 
-const u_ibl: bool = true;
-const u_specular_levels_minus_one: f32 = 0f;
-const u_deferred: bool = false;
+@id(0) override u_ibl: bool = true;
+@id(1) override u_specular_levels_minus_one: f32 = 0f;
+@id(2) override u_deferred: bool = false;
 
 @group(0) @binding(16) 
 var f_mesh_texture_0_sampler: sampler;

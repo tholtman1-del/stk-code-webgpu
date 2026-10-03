@@ -7,6 +7,7 @@
 #include "ge_spm.hpp"
 #include "ge_spm_buffer.hpp"
 #include "ge_vulkan_animated_mesh_scene_node.hpp"
+#include "ge_vulkan_light_handler.hpp"
 #include "ge_wgpu_camera_scene_node.hpp"
 #include "ge_wgpu_driver.hpp"
 #include "ge_wgpu_dynamic_spm_buffer.hpp"
@@ -18,6 +19,7 @@
 
 #include "mini_glm.hpp"
 #include "IBillboardSceneNode.h"
+#include "ILightSceneNode.h"
 #include "IMeshSceneNode.h"
 #include "IParticleSystemSceneNode.h"
 #include "IrrlichtDevice.h"
@@ -34,10 +36,15 @@ const uint32_t PUSH_CONSTANTS_BINDING = 4;
 // Dynamic uniform offsets must be multiples of 256
 const uint32_t PUSH_CONSTANTS_SLOT = 256;
 const uint64_t PUSH_CONSTANTS_SIZE = 64;
+// Binding of u_global_light in group 1 (global_light_data.glsl)
+const uint32_t GLOBAL_LIGHT_BINDING = 3;
 const wgpu::TextureFormat DEPTH_FORMAT = wgpu::TextureFormat::Depth32Float;
 
 wgpu::BindGroupLayout g_material_layout;
 wgpu::BindGroupLayout g_data_layout;
+// Group 2 of the PBR shaders: diffuse and specular environment cube maps
+wgpu::BindGroupLayout g_env_layout;
+wgpu::BindGroup g_env_bind_group;
 wgpu::PipelineLayout g_pipeline_layout;
 std::unordered_map<std::string, wgpu::RenderPipeline> g_pipelines;
 // Key is the texture views of every layer, then the sampler
@@ -100,7 +107,7 @@ void createLayouts()
     const wgpu::ShaderStage vs_fs =
         wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
     entries.clear();
-    entries.resize(4);
+    entries.resize(5);
     entries[0].binding = 0;
     entries[0].visibility = vs_fs;
     entries[0].buffer.type = wgpu::BufferBindingType::Uniform;
@@ -116,13 +123,74 @@ void createLayouts()
     entries[3].buffer.type = wgpu::BufferBindingType::Uniform;
     entries[3].buffer.hasDynamicOffset = true;
     entries[3].buffer.minBindingSize = PUSH_CONSTANTS_SIZE;
+    entries[4].binding = GLOBAL_LIGHT_BINDING;
+    entries[4].visibility = vs_fs;
+    entries[4].buffer.type = wgpu::BufferBindingType::Uniform;
+    entries[4].buffer.minBindingSize = sizeof(GEGlobalLightBuffer);
     desc.label = "mesh data";
     desc.entryCount = entries.size();
     desc.entries = entries.data();
     g_data_layout = device.CreateBindGroupLayout(&desc);
 
-    std::array<wgpu::BindGroupLayout, 2> layouts =
-        {{ g_material_layout, g_data_layout }};
+    entries.clear();
+    for (unsigned i = 0; i < 2; i++)
+    {
+        wgpu::BindGroupLayoutEntry cube;
+        cube.binding = i;
+        cube.visibility = wgpu::ShaderStage::Fragment;
+        cube.texture.sampleType = wgpu::TextureSampleType::Float;
+        cube.texture.viewDimension = wgpu::TextureViewDimension::Cube;
+        entries.push_back(cube);
+        wgpu::BindGroupLayoutEntry sampler;
+        sampler.binding = i + GEWGPUShaderManager::getSamplerBindingOffset();
+        sampler.visibility = wgpu::ShaderStage::Fragment;
+        sampler.sampler.type = wgpu::SamplerBindingType::Filtering;
+        entries.push_back(sampler);
+    }
+    desc.label = "environment maps";
+    desc.entryCount = entries.size();
+    desc.entries = entries.data();
+    g_env_layout = device.CreateBindGroupLayout(&desc);
+
+    // Black environment until image based lighting is implemented
+    wgpu::TextureDescriptor tex_desc;
+    tex_desc.label = "dummy environment map";
+    tex_desc.size = { 1, 1, 6 };
+    tex_desc.format = wgpu::TextureFormat::RGBA8Unorm;
+    tex_desc.usage = wgpu::TextureUsage::TextureBinding |
+        wgpu::TextureUsage::CopyDst;
+    wgpu::Texture dummy = device.CreateTexture(&tex_desc);
+    const uint32_t black[6] = {};
+    wgpu::TexelCopyTextureInfo dst;
+    dst.texture = dummy;
+    wgpu::TexelCopyBufferLayout data_layout;
+    data_layout.bytesPerRow = 4;
+    data_layout.rowsPerImage = 1;
+    wgpu::Extent3D extent = { 1, 1, 6 };
+    getWGPUDriver()->getQueue().WriteTexture(&dst, black, sizeof(black),
+        &data_layout, &extent);
+    wgpu::TextureViewDescriptor view_desc;
+    view_desc.dimension = wgpu::TextureViewDimension::Cube;
+    wgpu::TextureView dummy_view = dummy.CreateView(&view_desc);
+    std::array<wgpu::BindGroupEntry, 4> env_entries = {};
+    for (unsigned i = 0; i < 2; i++)
+    {
+        env_entries[i * 2].binding = i;
+        env_entries[i * 2].textureView = dummy_view;
+        env_entries[i * 2 + 1].binding =
+            i + GEWGPUShaderManager::getSamplerBindingOffset();
+        env_entries[i * 2 + 1].sampler =
+            getWGPUDriver()->getSampler(GVS_SKYBOX);
+    }
+    wgpu::BindGroupDescriptor bg_desc;
+    bg_desc.label = "environment maps";
+    bg_desc.layout = g_env_layout;
+    bg_desc.entryCount = env_entries.size();
+    bg_desc.entries = env_entries.data();
+    g_env_bind_group = device.CreateBindGroup(&bg_desc);
+
+    std::array<wgpu::BindGroupLayout, 3> layouts =
+        {{ g_material_layout, g_data_layout, g_env_layout }};
     wgpu::PipelineLayoutDescriptor pl_desc;
     pl_desc.bindGroupLayoutCount = layouts.size();
     pl_desc.bindGroupLayouts = layouts.data();
@@ -148,10 +216,12 @@ void createLayouts()
 /** Returns a null pipeline if the shader is not drawn in pass pt. */
 wgpu::RenderPipeline getPipeline(const std::string& shader, bool skinning,
                                  GEWGPUPassType pt,
-                                 wgpu::TextureFormat color_format)
+                                 wgpu::TextureFormat color_format,
+                                 const GEWGPUShaderManager::Constants& c)
 {
     std::string key = std::to_string(pt) + shader +
-        (skinning ? "_skinning" : "") + std::to_string((int)color_format);
+        (skinning ? "_skinning" : "") + std::to_string((int)color_format) +
+        (c.m_ibl ? "i" : "") + (c.m_has_skybox ? "s" : "");
     auto it = g_pipelines.find(key);
     if (it != g_pipelines.end())
         return it->second;
@@ -248,6 +318,10 @@ wgpu::RenderPipeline getPipeline(const std::string& shader, bool skinning,
     fragment.entryPoint = "main";
     fragment.targetCount = 1;
     fragment.targets = &target;
+    std::vector<wgpu::ConstantEntry> fs_constants =
+        GEWGPUShaderManager::getConstants(fragment_shader, c);
+    fragment.constantCount = fs_constants.size();
+    fragment.constants = fs_constants.data();
 
     wgpu::DepthStencilState depth;
     depth.format = DEPTH_FORMAT;
@@ -261,6 +335,10 @@ wgpu::RenderPipeline getPipeline(const std::string& shader, bool skinning,
     desc.layout = g_pipeline_layout;
     desc.vertex.module = GEWGPUShaderManager::getShader(vertex_shader);
     desc.vertex.entryPoint = "main";
+    std::vector<wgpu::ConstantEntry> vs_constants =
+        GEWGPUShaderManager::getConstants(vertex_shader, c);
+    desc.vertex.constantCount = vs_constants.size();
+    desc.vertex.constants = vs_constants.data();
     desc.vertex.bufferCount = skinning ? 2 : 1;
     desc.vertex.buffers = buffers.data();
     desc.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
@@ -279,8 +357,12 @@ wgpu::RenderPipeline getPipeline(const std::string& shader, bool skinning,
 
 // ----------------------------------------------------------------------------
 const wgpu::BindGroup& getMaterialBindGroup(
-                                const GEWGPUDrawCall::TexturesList& textures)
+                                const GEWGPUDrawCall::TexturesList& textures,
+                                const std::string& shader)
 {
+    const bool pbr = getGEConfig()->m_pbr;
+    auto material = GEMaterialManager::getMaterial(
+        shader == "ghost" ? "solid" : shader);
     GEWGPUDriver* driver = getWGPUDriver();
     const unsigned layers = GEWGPUShaderManager::getMeshTextureLayer();
     const wgpu::Sampler& sampler =
@@ -297,7 +379,8 @@ const wgpu::BindGroup& getMaterialBindGroup(
             t = static_cast<const GEWGPUTexture*>(i == 0 ?
                 driver->getWhiteTexture() : driver->getTransparentTexture());
         }
-        views[i] = t->getView(false);
+        views[i] = t->getView(pbr && i < material->m_srgb_settings.size() &&
+            material->m_srgb_settings[i]);
         key[i] = views[i].Get();
     }
     key[layers] = (WGPUTextureView)sampler.Get();
@@ -370,8 +453,9 @@ std::string GEWGPUDrawCall::getShader(const irr::video::SMaterial& m) const
 {
     std::string shader = GEMaterialManager::getShader(m.MaterialType);
     auto material = GEMaterialManager::getMaterial(shader);
-    // PBR is not implemented yet, so every material uses its fallback
-    if (!material->m_nonpbr_fallback.empty())
+    // displace needs deferred rendering, which is not implemented yet
+    if (!material->m_nonpbr_fallback.empty() &&
+        (!getGEConfig()->m_pbr || shader == "displace"))
     {
         shader = material->m_nonpbr_fallback;
         material = GEMaterialManager::getMaterial(shader);
@@ -391,7 +475,32 @@ void GEWGPUDrawCall::prepare(GEWGPUCameraSceneNode* cam)
     m_culling_tool->init(cam);
     m_view_position = cam->getAbsolutePosition();
     m_billboard_rotation = MiniGLM::getBulletQuaternion(cam->getViewMatrix());
+    if (getGEConfig()->m_pbr)
+    {
+        if (!m_light_handler)
+        {
+            m_light_handler.reset(new GEVulkanLightHandler(getWGPUDriver()
+                ->getIrrlichtDevice()->getSceneManager()));
+        }
+        m_light_handler->prepare();
+    }
+    else
+        m_light_handler.reset();
 }   // prepare
+
+// ----------------------------------------------------------------------------
+void GEWGPUDrawCall::addLightNode(irr::scene::ILightSceneNode* node)
+{
+    if (!m_light_handler)
+        return;
+    if (node->getLightType() != irr::video::ELT_DIRECTIONAL)
+    {
+        const irr::video::SLight& l = node->getLightData();
+        if (m_culling_tool->isCulled(l.Position, l.Radius))
+            return;
+    }
+    m_light_handler->addLightNode(node);
+}   // addLightNode
 
 // ----------------------------------------------------------------------------
 void GEWGPUDrawCall::addNode(irr::scene::ISceneNode* node)
@@ -472,6 +581,14 @@ void GEWGPUDrawCall::addSkyBox(irr::scene::ISceneNode* node)
 void GEWGPUDrawCall::generate()
 {
     createLayouts();
+    if (m_light_handler)
+    {
+        irr::video::SColor skytop;
+        if (m_skybox_renderer)
+            skytop = m_skybox_renderer->getSkytopColor();
+        m_light_handler->generate(m_view_position,
+            m_skybox_renderer ? &skytop : NULL, false/*deferred*/);
+    }
     // Index 0 is the identity matrix, for nodes without skinning data
     m_skinning.emplace_back();
     std::unordered_map<irr::scene::ISceneNode*, int> skinning_offsets;
@@ -638,6 +755,19 @@ void GEWGPUDrawCall::upload()
             m_skinning.size() * sizeof(irr::core::matrix4));
     }
 
+    if (!m_light_buffer)
+    {
+        uint64_t size = 0;
+        ensureBuffer(m_light_buffer, size, sizeof(GEGlobalLightBuffer),
+            wgpu::BufferUsage::Uniform, "global light");
+        recreate = true;
+    }
+    if (m_light_handler)
+    {
+        queue.WriteBuffer(m_light_buffer, 0, m_light_handler->getData(),
+            (m_light_handler->getSize() + 3) & ~(size_t)3);
+    }
+
     // Push constants of each material that has them, in its own slot
     std::vector<uint8_t> push_data(PUSH_CONSTANTS_SLOT, 0);
     for (const DrawCmd& cmd : m_cmds)
@@ -667,7 +797,7 @@ void GEWGPUDrawCall::upload()
 
     if (recreate || !m_data_bind_group)
     {
-        std::array<wgpu::BindGroupEntry, 4> entries = {};
+        std::array<wgpu::BindGroupEntry, 5> entries = {};
         entries[0].binding = 0;
         entries[0].buffer = m_camera_buffer;
         entries[0].size = sizeof(GEWGPUCameraUBO);
@@ -680,6 +810,9 @@ void GEWGPUDrawCall::upload()
         entries[3].binding = PUSH_CONSTANTS_BINDING;
         entries[3].buffer = m_push_constants_buffer;
         entries[3].size = PUSH_CONSTANTS_SIZE;
+        entries[4].binding = GLOBAL_LIGHT_BINDING;
+        entries[4].buffer = m_light_buffer;
+        entries[4].size = sizeof(GEGlobalLightBuffer);
         wgpu::BindGroupDescriptor desc;
         desc.label = "mesh data";
         desc.layout = g_data_layout;
@@ -714,6 +847,7 @@ void GEWGPUDrawCall::render(wgpu::RenderPassEncoder& pass,
     pass.SetScissorRect(vp.UpperLeftCorner.X, vp.UpperLeftCorner.Y,
         vp.getWidth(), vp.getHeight());
 
+    pass.SetBindGroup(2, g_env_bind_group);
     renderPass(pass, GWPT_SOLID, color_format);
     if (m_skybox_renderer)
         m_skybox_renderer->render(pass, color_format, m_data_bind_group,
@@ -729,6 +863,8 @@ void GEWGPUDrawCall::renderPass(wgpu::RenderPassEncoder& pass,
 {
     GEWGPUMeshCache* mc = static_cast<GEWGPUMeshCache*>(getWGPUDriver()
         ->getIrrlichtDevice()->getSceneManager()->getMeshCache());
+    GEWGPUShaderManager::Constants constants;
+    constants.m_has_skybox = m_skybox_renderer != NULL;
     WGPURenderPipeline cur_pipeline = NULL;
     const TexturesList* cur_textures = NULL;
     // 0: nothing bound, 1: mesh cache, 2: mesh cache with bones, 3: dynamic
@@ -736,23 +872,26 @@ void GEWGPUDrawCall::renderPass(wgpu::RenderPassEncoder& pass,
     for (const DrawCmd& cmd : m_cmds)
     {
         wgpu::RenderPipeline pipeline = getPipeline(cmd.m_shader,
-            cmd.m_skinning, pt, color_format);
+            cmd.m_skinning, pt, color_format, constants);
         if (!pipeline)
             continue;
         if (cmd.m_dynamic ? !cmd.m_dynamic->getVertexBuffer() :
             !mc->getBuffer())
             continue;
-        if (pipeline.Get() != cur_pipeline)
+        const bool pipeline_changed = pipeline.Get() != cur_pipeline;
+        if (pipeline_changed)
         {
             cur_pipeline = pipeline.Get();
             pass.SetPipeline(pipeline);
             uint32_t offset = m_push_constants_offsets[cmd.m_shader];
             pass.SetBindGroup(1, m_data_bind_group, 1, &offset);
         }
-        if (!cur_textures || *cur_textures != cmd.m_textures)
+        if (!cur_textures || *cur_textures != cmd.m_textures ||
+            pipeline_changed)
         {
             cur_textures = &cmd.m_textures;
-            pass.SetBindGroup(0, getMaterialBindGroup(cmd.m_textures));
+            pass.SetBindGroup(0, getMaterialBindGroup(cmd.m_textures,
+                cmd.m_shader));
         }
         if (cmd.m_dynamic)
         {
@@ -792,6 +931,8 @@ void GEWGPUDrawCall::destroyShared()
     g_pipeline_layout = nullptr;
     g_material_layout = nullptr;
     g_data_layout = nullptr;
+    g_env_layout = nullptr;
+    g_env_bind_group = nullptr;
 }   // destroyShared
 
 // ----------------------------------------------------------------------------

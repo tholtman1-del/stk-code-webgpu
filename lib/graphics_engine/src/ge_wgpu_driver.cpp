@@ -294,8 +294,6 @@ bool GEWGPUDriver::beginScene(bool backBuffer, bool zBuffer, SColor color,
                               core::rect<s32>* sourceRect)
 {
     runPendingTasks();
-    // PBR (deferred lighting, IBL, shadows) is not implemented yet
-    getGEConfig()->m_pbr = false;
     GEMaterialManager::update();
     if (!m_billboard_quad && m_irrlicht_device->getSceneManager() &&
         m_irrlicht_device->getSceneManager()->getMeshCache())
@@ -517,14 +515,21 @@ void GEWGPUDriver::createBillboardQuad()
 void GEWGPUDriver::updateDriver(bool scale_changed, bool pbr_changed,
                                 bool ibl_changed)
 {
-    if (pbr_changed)
-        reloadShaders();
+    if (!pbr_changed)
+        return;
+    reloadShaders();
+    // Vertex colors are converted to linear for PBR (copyToMappedBuffer)
+    scene::ISceneManager* sm = m_irrlicht_device->getSceneManager();
+    if (sm && sm->getMeshCache())
+        static_cast<GEWGPUMeshCache*>(sm->getMeshCache())->meshCacheChanged();
 }   // updateDriver
 
 // ----------------------------------------------------------------------------
 void GEWGPUDriver::reloadShaders()
 {
     GEWGPU2dRenderer::destroy();
+    // The layouts depend on the number of mesh texture layers
+    GEWGPUDrawCall::destroyShared();
     GEWGPUShaderManager::reload();
     GEWGPU2dRenderer::init(this);
 }   // reloadShaders

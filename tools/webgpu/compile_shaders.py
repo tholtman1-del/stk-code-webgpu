@@ -24,7 +24,7 @@ def predefines(pbr):
     lines.append("#define GE_WEBGPU 1")
     return "\n".join(lines) + "\n"
 
-def compile_one(src, variant, pbr, verbose):
+def compile_one(src, variant, pbr, verbose, freeze=False):
     stage = STAGES[src.suffix]
     out_dir = OUT / variant
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -48,7 +48,10 @@ def compile_one(src, variant, pbr, verbose):
         # naga's SPIR-V reader cannot follow combined image samplers through
         # function calls, so flatten everything first and split them.
         opt = pathlib.Path(tmp) / "opt.spv"
-        r = subprocess.run(["spirv-opt", "--freeze-spec-const",
+        # Specialization constants are kept: naga turns them into WGSL
+        # override constants (same ids), set per pipeline by the driver
+        r = subprocess.run(["spirv-opt"] +
+            (["--freeze-spec-const"] if freeze else []) + [
             "--fold-spec-const-op-composite", "--inline-entry-points-exhaustive",
             "--split-combined-image-sampler", "--eliminate-dead-functions",
             "--eliminate-dead-code-aggressive", str(spv), "-o", str(opt)],
@@ -60,7 +63,13 @@ def compile_one(src, variant, pbr, verbose):
         r = subprocess.run(["naga", str(spv), str(wgsl)],
             capture_output=True, text=True)
         if r.returncode != 0:
-            return False, "naga: " + (r.stdout + r.stderr).strip()
+            msg = (r.stdout + r.stderr).strip()
+            # naga cannot read some uses of specialization constants (e.g.
+            # array sizes), those shaders get the default values
+            if not freeze and "SpecConstantOp" in msg:
+                ok, msg = compile_one(src, variant, pbr, verbose, True)
+                return ok, (msg or "specialization constants frozen")
+            return False, "naga: " + msg
         text = push_constants_to_uniform(wgsl.read_text())
         if stage == "vert":
             text = unpack_packed_inputs(text)
@@ -150,7 +159,8 @@ def main():
             if src.suffix not in STAGES or args.filter not in src.name:
                 continue
             ok, msg = compile_one(src, variant, pbr, args.verbose)
-            print("%-4s %-6s %s" % ("ok" if ok else "FAIL", variant, src.name))
+            print("%-4s %-6s %s%s" % ("ok" if ok else "FAIL", variant,
+                src.name, " (%s)" % msg if ok and msg else ""))
             if not ok:
                 failures += 1
                 if args.verbose:

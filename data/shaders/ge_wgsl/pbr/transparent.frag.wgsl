@@ -1,4 +1,4 @@
-const u_ibl: bool = true;
+@id(0) override u_ibl: bool = true;
 
 @group(0) @binding(16) 
 var f_mesh_texture_0_sampler: sampler;

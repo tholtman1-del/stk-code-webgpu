@@ -181,7 +181,7 @@ irr::u32 GEWGPUSceneManager::registerNodeForRendering(
         dc->addSkyBox(node);
         return 1;
     case irr::scene::ESNT_LIGHT:
-        // Only used by PBR, which is not implemented yet
+        dc->addLightNode(static_cast<irr::scene::ILightSceneNode*>(node));
         return 1;
     case irr::scene::ESNT_BILLBOARD:
     case irr::scene::ESNT_PARTICLE_SYSTEM:

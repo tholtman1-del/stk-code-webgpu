@@ -75,6 +75,7 @@ set(GE_COMMON_SOURCES
     src/ge_spm.cpp
     src/ge_spm_buffer.cpp
     src/ge_vulkan_animated_mesh_scene_node.cpp
+    src/ge_vulkan_light_handler.cpp
     src/ge_vulkan_mesh_scene_node.cpp
 )
 
@@ -121,7 +122,6 @@ set(GE_SOURCES
     src/ge_vulkan_fbo_texture.cpp
     src/ge_vulkan_features.cpp
     src/ge_vulkan_hiz_depth.cpp
-    src/ge_vulkan_light_handler.cpp
     src/ge_vulkan_mesh_cache.cpp
     src/ge_vulkan_scene_manager.cpp
     src/ge_vulkan_shader_manager.cpp

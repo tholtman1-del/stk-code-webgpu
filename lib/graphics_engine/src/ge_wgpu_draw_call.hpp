@@ -21,7 +21,7 @@
 
 namespace irr
 {
-    namespace scene { class ISceneNode; class IMesh; }
+    namespace scene { class ILightSceneNode; class ISceneNode; class IMesh; }
     namespace video { class ITexture; }
 }
 
@@ -30,6 +30,7 @@ namespace GE
 class GECullingTool;
 class GESPMBuffer;
 class GEVulkanAnimatedMeshSceneNode;
+class GEVulkanLightHandler;
 class GEWGPUCameraSceneNode;
 class GEWGPUDynamicSPMBuffer;
 class GEWGPUSkyBoxRenderer;
@@ -85,6 +86,8 @@ private:
 
     std::unique_ptr<GECullingTool> m_culling_tool;
 
+    std::unique_ptr<GEVulkanLightHandler> m_light_handler;
+
     GEWGPUSkyBoxRenderer* m_skybox_renderer;
 
     irr::core::vector3df m_view_position;
@@ -103,7 +106,7 @@ private:
     std::unordered_map<std::string, uint32_t> m_push_constants_offsets;
 
     wgpu::Buffer m_camera_buffer, m_object_buffer, m_skinning_buffer,
-        m_push_constants_buffer;
+        m_push_constants_buffer, m_light_buffer;
 
     uint64_t m_object_buffer_size, m_skinning_buffer_size,
         m_push_constants_buffer_size;
@@ -132,6 +135,8 @@ public:
                           irr::scene::ESCENE_NODE_TYPE node_type);
     // ------------------------------------------------------------------------
     void addSkyBox(irr::scene::ISceneNode* node);
+    // ------------------------------------------------------------------------
+    void addLightNode(irr::scene::ILightSceneNode* node);
     // ------------------------------------------------------------------------
     void generate();
     // ------------------------------------------------------------------------

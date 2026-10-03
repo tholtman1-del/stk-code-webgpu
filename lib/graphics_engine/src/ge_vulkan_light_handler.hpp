@@ -12,14 +12,12 @@ namespace irr
 {
     namespace scene
     {
-        class ILightSceneNode;
+        class ILightSceneNode; class ISceneManager;
     }
 }
 
 namespace GE
 {
-class GEVulkanDriver;
-class GEVulkanSkyBoxRenderer;
 const irr::u32 MAX_RENDERING_LIGHT = 32;
 struct GELight
 {
@@ -49,7 +47,7 @@ struct GEGlobalLightBuffer
 class GEVulkanLightHandler
 {
 private:
-    GEVulkanDriver* m_vk;
+    irr::scene::ISceneManager* m_scene_manager;
 
     GEGlobalLightBuffer m_buffer;
 
@@ -58,9 +56,10 @@ private:
     unsigned m_fullscreen_light_count;
 public:
     // ------------------------------------------------------------------------
-    GEVulkanLightHandler(GEVulkanDriver* vk)
+    /** Shared by the Vulkan and WebGPU renderers. */
+    GEVulkanLightHandler(irr::scene::ISceneManager* sm)
     {
-        m_vk = vk;
+        m_scene_manager = sm;
         prepare();
     }
     // ------------------------------------------------------------------------
@@ -68,8 +67,9 @@ public:
     // ------------------------------------------------------------------------
     void prepare();
     // ------------------------------------------------------------------------
+    /** skytop is NULL without skybox, deferred enables fullscreen lights. */
     void generate(const irr::core::vector3df& cam_pos,
-                  GEVulkanSkyBoxRenderer* skybox);
+                  const irr::video::SColor* skytop, bool deferred);
     // ------------------------------------------------------------------------
     void addLightNode(irr::scene::ILightSceneNode* node);
     // ------------------------------------------------------------------------

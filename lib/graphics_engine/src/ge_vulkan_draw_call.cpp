@@ -26,6 +26,7 @@
 #include "IBillboardSceneNode.h"
 #include "ILightSceneNode.h"
 #include "IParticleSystemSceneNode.h"
+#include "IrrlichtDevice.h"
 
 #include <algorithm>
 #include <cmath>
@@ -204,7 +205,14 @@ void GEVulkanDrawCall::generate(GEVulkanDriver* vk)
         createVulkanData();
 
     if (m_light_handler)
-         m_light_handler->generate(m_view_position, m_skybox_renderer);
+    {
+        irr::video::SColor skytop;
+        if (m_skybox_renderer)
+            skytop = m_skybox_renderer->getSkytopColor();
+        GEVulkanFBOTexture* rtt = vk->getRTTTexture();
+        m_light_handler->generate(m_view_position,
+            m_skybox_renderer ? &skytop : NULL, rtt && rtt->isDeferredFBO());
+    }
 
     using Nodes = std::pair<std::pair<GESPMBuffer*, TexturesList>, std::unordered_map<
         std::string, std::vector<std::pair<irr::scene::ISceneNode*, int
@@ -712,7 +720,8 @@ void GEVulkanDrawCall::prepare(GEVulkanCameraSceneNode* cam)
 {
     reset();
     if (getGEConfig()->m_pbr && m_light_handler == NULL)
-        m_light_handler = new GEVulkanLightHandler(getVKDriver());
+        m_light_handler = new GEVulkanLightHandler(
+            getVKDriver()->getIrrlichtDevice()->getSceneManager());
     if (m_light_handler)
         m_light_handler->prepare();
     m_culling_tool->init(cam);

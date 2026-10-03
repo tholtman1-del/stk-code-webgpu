@@ -10,7 +10,7 @@ struct CameraBuffer {
     m_padding: vec2<f32>,
 }
 
-const u_deferred: bool = false;
+@id(2) override u_deferred: bool = false;
 
 var<private> f_uv_1: vec2<f32>;
 @group(1) @binding(0) 
