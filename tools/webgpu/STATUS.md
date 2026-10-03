@@ -48,18 +48,26 @@ are blocked in cloud sessions.
   Emscripten source list is the shared GE files plus `ge_wgpu_*`; the
   compressors and culling tool are Vulkan-only for now.
   `GESPMBuffer::createVertexIndexBuffer()` is a no-op without Vulkan until
-  WebGPU mesh buffers exist (item 7).
+  WebGPU mesh buffers exist (Next 2).
+- `CIrrDeviceSDL`: `EDT_WEBGPU` window (no GL/Vulkan flags) and driver;
+  Irrlicht's `CSceneManager` until a WebGPU GE scene manager exists.
+  `stkirrlicht` compiles for wasm. No HiDPI yet: SDL owns the canvas size in
+  CSS pixels and the surface is sized from `WindowSize`.
+- `src/online/http_request_fetch.cpp`: synchronous `emscripten_fetch` on the
+  request thread. No progress during a transfer, cancel only checked before
+  and after, servers need CORS headers for the game's origin.
+- `MainLoop::runFrame()`, driven by `emscripten_set_main_loop_arg` in the
+  browser (no fps sleeps). On abort it saves player data and config and
+  stops; exceptions in a frame are no longer caught by `main()`.
+- `tools/webgpu/web/`: `index.html` loader (adapter/device, limits,
+  device-loss and environment errors, wasm download progress, IDBFS at
+  `/persistent`, `mountGameData()` hook) and `serve.py` (COOP/COEP).
 
 ## Next
 
-2. `CIrrDeviceSDL.cpp`: `EDT_WEBGPU` case for window, driver and GE scene
-3. `src/online/http_request_fetch.cpp` (emscripten_fetch, synchronous on the
-   request thread)
-4. Split `MainLoop::run()` into `runFrame()`, drive it with
-   `emscripten_set_main_loop`
-5. HTML/JS loader: request adapter and device, set
-   `Module.preinitializedWebGPUDevice`, COOP/COEP headers for threads
-6. Package game data, first build, boot to the main menu
-7. 3D: mesh buffers, draw calls, render targets, then deferred PBR, skybox,
-   IBL, shadows
-8. Performance: async texture decoding, compressed textures, asset streaming
+1. Package game data (`mountGameData()` in `index.html`), link the
+   `supertuxkart` target, boot to the main menu
+2. 3D: mesh buffers (`GESPMBuffer`), a WebGPU GE scene manager, draw calls,
+   render targets, then deferred PBR, skybox, IBL, shadows
+3. Performance: async texture decoding, compressed textures, asset streaming,
+   HiDPI
