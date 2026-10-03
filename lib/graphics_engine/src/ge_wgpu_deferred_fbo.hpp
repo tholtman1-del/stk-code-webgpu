@@ -32,13 +32,17 @@ public:
         wgpu::TextureFormat::RG8Unorm;
     static constexpr wgpu::TextureFormat DISPLACE_COLOR_FORMAT =
         wgpu::TextureFormat::BGRA8Unorm;
+    static constexpr wgpu::TextureFormat SSR_FORMAT =
+        wgpu::TextureFormat::BGRA8Unorm;
 private:
     irr::core::dimension2du m_size;
 
-    wgpu::Texture m_color, m_normal, m_depth, m_hdr, m_mask, m_displace_color;
+    /** m_ssr only with screen space reflections */
+    wgpu::Texture m_color, m_normal, m_depth, m_hdr, m_mask, m_displace_color,
+        m_ssr;
 
     wgpu::TextureView m_color_view, m_normal_view, m_depth_view, m_hdr_view,
-        m_mask_view, m_displace_color_view;
+        m_mask_view, m_displace_color_view, m_ssr_view;
 
     wgpu::BindGroupLayout m_gbuffer_layout, m_hdr_layout, m_displace_layout,
         m_displace_mask_layout;
@@ -65,9 +69,13 @@ private:
                                      bool strip);
 public:
     // ------------------------------------------------------------------------
-    GEWGPUDeferredFBO(const irr::core::dimension2du& size);
+    GEWGPUDeferredFBO(const irr::core::dimension2du& size, bool ssr);
     // ------------------------------------------------------------------------
     const irr::core::dimension2du& getSize() const          { return m_size; }
+    // ------------------------------------------------------------------------
+    bool hasSSR() const                             { return m_ssr != nullptr; }
+    // ------------------------------------------------------------------------
+    const wgpu::TextureView& getSSRView() const         { return m_ssr_view; }
     // ------------------------------------------------------------------------
     const wgpu::TextureView& getColorView() const     { return m_color_view; }
     // ------------------------------------------------------------------------
@@ -89,7 +97,8 @@ public:
     const wgpu::BindGroupLayout& getDisplaceLayout() const
                                                    { return m_displace_layout; }
     // ------------------------------------------------------------------------
-    /** Group 3 of displace_mask.frag (displace color, depth, hiz depth). */
+    /** Group 3 of displace_mask.frag (displace color, depth, hiz depth),
+     *  without HiZ (GEWGPUHiZDepth has its own). */
     const wgpu::BindGroup& getDisplaceMaskBindGroup() const
                                           { return m_displace_mask_bind_group; }
     // ------------------------------------------------------------------------

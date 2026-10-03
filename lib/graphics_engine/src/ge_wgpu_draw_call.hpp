@@ -34,6 +34,7 @@ class GEVulkanLightHandler;
 class GEWGPUCameraSceneNode;
 class GEWGPUDeferredFBO;
 class GEWGPUDynamicSPMBuffer;
+class GEWGPUHiZDepth;
 class GEWGPUSkyBoxRenderer;
 
 enum GEWGPUPassType : unsigned
@@ -93,6 +94,9 @@ private:
     std::unique_ptr<GEVulkanLightHandler> m_light_handler;
 
     GEWGPUSkyBoxRenderer* m_skybox_renderer;
+
+    // Screen space reflections with GSSRT_HIZ*
+    std::unique_ptr<GEWGPUHiZDepth> m_hiz_depth;
 
     irr::core::vector3df m_view_position;
 
@@ -177,6 +181,9 @@ public:
     // ------------------------------------------------------------------------
     void renderConvertColor(wgpu::RenderPassEncoder& pass,
                             GEWGPUDeferredFBO* dfbo);
+    // ------------------------------------------------------------------------
+    void generateHiZ(wgpu::CommandEncoder& encoder,
+                     const GEWGPUDeferredFBO* dfbo);
     // ------------------------------------------------------------------------
     void renderDisplaceMask(wgpu::RenderPassEncoder& pass,
                             GEWGPUDeferredFBO* dfbo);

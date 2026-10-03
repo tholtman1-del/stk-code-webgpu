@@ -12,6 +12,7 @@
 #include "ge_wgpu_deferred_fbo.hpp"
 #include "ge_wgpu_driver.hpp"
 #include "ge_wgpu_dynamic_spm_buffer.hpp"
+#include "ge_wgpu_hiz_depth.hpp"
 #include "ge_wgpu_mesh_cache.hpp"
 #include "ge_wgpu_scene_manager.hpp"
 #include "ge_wgpu_shader_manager.hpp"
@@ -227,7 +228,8 @@ wgpu::RenderPipeline getPipeline(const std::string& shader, bool skinning,
     std::string key = std::to_string(pt) + shader +
         (skinning ? "_skinning" : "") + std::to_string((int)color_format) +
         (c.m_ibl ? "i" : "") + (c.m_has_skybox ? "s" : "") +
-        (c.m_deferred ? "d" : "");
+        (c.m_deferred ? "d" : "") + (c.m_ssr ? "r" : "") +
+        (c.m_hiz_iterations ? std::to_string(c.m_hiz_iterations) : "");
     auto it = g_pipelines.find(key);
     if (it != g_pipelines.end())
         return it->second;
@@ -337,7 +339,14 @@ wgpu::RenderPipeline getPipeline(const std::string& shader, bool skinning,
         target_count = 2;
     }
     else if (pt == GWPT_DISPLACE_MASK)
+    {
         targets[0].format = GEWGPUDeferredFBO::MASK_FORMAT;
+        if (c.m_ssr)
+        {
+            targets[1].format = GEWGPUDeferredFBO::SSR_FORMAT;
+            target_count = 2;
+        }
+    }
     if (write_color && (alphablend || additive))
         targets[0].blend = &blend;
     if (!write_color)
@@ -522,6 +531,14 @@ void GEWGPUDrawCall::prepare(GEWGPUCameraSceneNode* cam)
     m_deferred = needsDeferredRendering(true/*auto_deferred*/) &&
         !getWGPUDriver()->getRenderTargetTexture();
     m_culling_tool->init(cam);
+    if (m_deferred &&
+        getGEConfig()->m_screen_space_reflection_type >= GSSRT_HIZ)
+    {
+        if (!m_hiz_depth)
+            m_hiz_depth.reset(new GEWGPUHiZDepth());
+    }
+    else
+        m_hiz_depth.reset();
     m_view_position = cam->getAbsolutePosition();
     m_billboard_rotation = MiniGLM::getBulletQuaternion(cam->getViewMatrix());
     if (getGEConfig()->m_pbr)
@@ -1024,12 +1041,29 @@ void GEWGPUDrawCall::renderConvertColor(wgpu::RenderPassEncoder& pass,
 }   // renderConvertColor
 
 // ----------------------------------------------------------------------------
+void GEWGPUDrawCall::generateHiZ(wgpu::CommandEncoder& encoder,
+                                 const GEWGPUDeferredFBO* dfbo)
+{
+    if (!m_hiz_depth || !m_camera || !hasDisplace())
+        return;
+    const irr::core::rectf& vp = m_camera->getUBOData()->m_viewport;
+    m_hiz_depth->prepare(irr::core::recti(
+        irr::core::position2di(vp.UpperLeftCorner.X, vp.UpperLeftCorner.Y),
+        irr::core::dimension2di(vp.LowerRightCorner.X,
+        vp.LowerRightCorner.Y)), dfbo);
+    m_hiz_depth->generate(encoder);
+}   // generateHiZ
+
+// ----------------------------------------------------------------------------
 void GEWGPUDrawCall::renderDisplaceMask(wgpu::RenderPassEncoder& pass,
                                         GEWGPUDeferredFBO* dfbo)
 {
     if (!beginRendering(pass))
         return;
-    pass.SetBindGroup(3, dfbo->getDisplaceMaskBindGroup());
+    pass.SetBindGroup(3, m_hiz_depth &&
+        m_hiz_depth->getRenderingBindGroup() ?
+        m_hiz_depth->getRenderingBindGroup() :
+        dfbo->getDisplaceMaskBindGroup());
     renderPass(pass, GWPT_DISPLACE_MASK, GEWGPUDeferredFBO::MASK_FORMAT, dfbo);
 }   // renderDisplaceMask
 
@@ -1066,6 +1100,23 @@ void GEWGPUDrawCall::renderPass(wgpu::RenderPassEncoder& pass,
     constants.m_deferred = m_deferred;
     constants.m_specular_levels_minus_one =
         GEWGPUSkyBoxRenderer::getSpecularLevelsMinusOne();
+    // As GEVulkanDrawCall::createPipeline
+    constants.m_ssr = m_deferred && dfbo && dfbo->hasSSR();
+    if (constants.m_ssr && m_hiz_depth)
+    {
+        switch (getGEConfig()->m_screen_space_reflection_type)
+        {
+        case GSSRT_HIZ400:
+            constants.m_hiz_iterations = 400;
+            break;
+        case GSSRT_HIZ200:
+            constants.m_hiz_iterations = 200;
+            break;
+        default:
+            constants.m_hiz_iterations = 100;
+            break;
+        }
+    }
     WGPURenderPipeline cur_pipeline = NULL;
     const TexturesList* cur_textures = NULL;
     // 0: nothing bound, 1: mesh cache, 2: mesh cache with bones, 3: dynamic

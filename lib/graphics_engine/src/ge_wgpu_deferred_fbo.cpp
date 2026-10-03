@@ -98,7 +98,8 @@ const wgpu::SamplerBindingType NON_FILTERING =
 }   // anonymous namespace
 
 // ----------------------------------------------------------------------------
-GEWGPUDeferredFBO::GEWGPUDeferredFBO(const irr::core::dimension2du& size)
+GEWGPUDeferredFBO::GEWGPUDeferredFBO(const irr::core::dimension2du& size,
+                                     bool ssr)
                  : m_size(size)
 {
     GEWGPUDriver* driver = getWGPUDriver();
@@ -116,6 +117,11 @@ GEWGPUDeferredFBO::GEWGPUDeferredFBO(const irr::core::dimension2du& size)
     m_hdr_view = m_hdr.CreateView();
     m_mask_view = m_mask.CreateView();
     m_displace_color_view = m_displace_color.CreateView();
+    if (ssr)
+    {
+        m_ssr = createTarget(size, SSR_FORMAT, "displace ssr");
+        m_ssr_view = m_ssr.CreateView();
+    }
 
     const wgpu::Sampler& nearest = driver->getSampler(GVS_NEAREST);
     const wgpu::TextureView& transparent =
@@ -135,17 +141,18 @@ GEWGPUDeferredFBO::GEWGPUDeferredFBO(const irr::core::dimension2du& size)
     m_hdr_bind_group = createBindGroup(m_hdr_layout, hdr, { m_hdr_view },
         { nearest }, "hdr");
 
-    // Mask, screen space reflection (not implemented, transparent) and
-    // displace color, as GVDFP_DISPLACE_COLOR in GEVulkanDeferredFBO
+    // Mask, screen space reflection (transparent without) and displace
+    // color, as GVDFP_DISPLACE_COLOR in GEVulkanDeferredFBO
     std::vector<Slot> displace = { { 0, UNFILTERABLE, NON_FILTERING },
         { 1, UNFILTERABLE, NON_FILTERING }, { 2, UNFILTERABLE, NON_FILTERING } };
     m_displace_layout = createLayout(displace, "displace");
     m_displace_bind_group = createBindGroup(m_displace_layout, displace,
-        { m_mask_view, transparent, m_displace_color_view },
+        { m_mask_view, ssr ? m_ssr_view : transparent,
+        m_displace_color_view },
         { nearest, nearest, nearest }, "displace");
 
-    // Displace color, depth compared with GVS_SHADOW and hiz depth (not
-    // implemented, transparent), as GVDFP_DISPLACE_MASK
+    // Displace color, depth compared with GVS_SHADOW and hiz depth
+    // (transparent here), as GVDFP_DISPLACE_MASK
     std::vector<Slot> mask = { { 0, UNFILTERABLE, NON_FILTERING },
         { 1, wgpu::TextureSampleType::Depth,
         wgpu::SamplerBindingType::Comparison },

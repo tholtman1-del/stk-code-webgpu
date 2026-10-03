@@ -472,8 +472,11 @@ void GEWGPUDriver::renderDeferred(wgpu::CommandEncoder& encoder,
                                   const std::vector<GEWGPUDrawCall*>& draw_calls,
                                   const wgpu::TextureView& output)
 {
-    if (!m_deferred_fbo || m_deferred_fbo->getSize() != ScreenSize)
-        m_deferred_fbo.reset(new GEWGPUDeferredFBO(ScreenSize));
+    const bool ssr =
+        getGEConfig()->m_screen_space_reflection_type != GSSRT_DISABLED;
+    if (!m_deferred_fbo || m_deferred_fbo->getSize() != ScreenSize ||
+        m_deferred_fbo->hasSSR() != ssr)
+        m_deferred_fbo.reset(new GEWGPUDeferredFBO(ScreenSize, ssr));
     GEWGPUDeferredFBO* dfbo = m_deferred_fbo.get();
 
     auto color = [](const wgpu::TextureView& view, wgpu::LoadOp load_op)
@@ -532,15 +535,21 @@ void GEWGPUDriver::renderDeferred(wgpu::CommandEncoder& encoder,
         dc->renderConvertColor(pass, dfbo);
     pass.End();
 
-    // 4. Displace mask
+    // 4. Displace mask (and screen space reflection), HiZ depth first
     bool has_displace = false;
     for (GEWGPUDrawCall* dc : draw_calls)
         has_displace |= dc->hasDisplace();
     if (has_displace)
     {
-        wgpu::RenderPassColorAttachment mask =
-            color(dfbo->getMaskView(), wgpu::LoadOp::Clear);
-        desc.colorAttachments = &mask;
+        for (GEWGPUDrawCall* dc : draw_calls)
+            dc->generateHiZ(encoder, dfbo);
+        std::array<wgpu::RenderPassColorAttachment, 2> mask =
+        {{
+            color(dfbo->getMaskView(), wgpu::LoadOp::Clear),
+            color(dfbo->getSSRView(), wgpu::LoadOp::Clear)
+        }};
+        desc.colorAttachmentCount = dfbo->hasSSR() ? 2 : 1;
+        desc.colorAttachments = mask.data();
         desc.depthStencilAttachment = &depth_read_only;
         pass = encoder.BeginRenderPass(&desc);
         for (GEWGPUDrawCall* dc : draw_calls)
@@ -552,6 +561,7 @@ void GEWGPUDriver::renderDeferred(wgpu::CommandEncoder& encoder,
     wgpu::RenderPassColorAttachment out = color(output, wgpu::LoadOp::Clear);
     video::SColorf cf(m_clear_color);
     out.clearValue = { cf.r, cf.g, cf.b, cf.a };
+    desc.colorAttachmentCount = 1;
     desc.colorAttachments = &out;
     desc.depthStencilAttachment = &depth_read_only;
     pass = encoder.BeginRenderPass(&desc);
