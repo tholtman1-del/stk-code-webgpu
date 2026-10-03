@@ -104,13 +104,17 @@ Cloud session notes:
   and transparent meshes, displace mask, displace color to the output. The
   Vulkan subpasses are separate render passes. Tested on zengarden and
   gran_paradiso_island. Fragment WGSL turns off `derivative_uniformity`.
+- Screen space reflections (`--enable-ssr`, HiZ with geometry level 3-5):
+  SSR target in the deferred FBO, `GEWGPUHiZDepth` builds the min depth
+  pyramid per camera with `hiz_depth.comp`.
+- PBR depth prepass (`GWPT_DEPTH`, then solid with an equal depth test), as
+  the Vulkan renderer on non-tiled GPUs.
 
 ## Next
 
-1. Screen space reflections (`u_ssr`, `hiz_depth.comp`): the deferred FBO
-   binds transparent placeholders for the SSR and HiZ textures; also the
-   PBR depth prepass
-2. Performance: async texture decoding, compressed textures, asset streaming
-   (the whole 762 MB package is downloaded and held in memory), HiDPI
-3. Smaller issues: STK's log colour codes show up in the browser console;
+1. Performance: async texture decoding, compressed textures, asset streaming
+   (the whole 762 MB package is downloaded and held in memory), HiDPI.
+   The depth prepass could be skipped on tiled GPUs (Apple, mobile) if the
+   adapter info allows telling them apart
+2. Smaller issues: STK's log colour codes show up in the browser console;
    C++ exceptions inside a frame are not caught (`MainLoop::runFrame()`)

@@ -39,6 +39,9 @@ class GEWGPUSkyBoxRenderer;
 
 enum GEWGPUPassType : unsigned
 {
+    // PBR depth prepass of solid meshes, then GWPT_SOLID with an equal
+    // depth test, as GVPT_DEPTH (doDepthOnlyRenderingFirst)
+    GWPT_DEPTH,
     GWPT_SOLID,
     // Depth of ghost (transparent) karts, so only their front faces show
     GWPT_GHOST_DEPTH,

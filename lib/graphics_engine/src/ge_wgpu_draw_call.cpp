@@ -244,10 +244,25 @@ wgpu::RenderPipeline getPipeline(const std::string& shader, bool skinning,
     bool additive = material->m_additive;
     wgpu::CompareFunction depth_compare = wgpu::CompareFunction::Less;
     bool valid = false;
+    // Without PBR the prepass makes rendering slower (see
+    // GEVulkanDrawCall::doDepthOnlyRenderingFirst)
+    const bool prepass = getGEConfig()->m_pbr &&
+        !material->m_depth_only_fragment_shader.empty();
     switch (pt)
     {
+    case GWPT_DEPTH:
+        valid = !ghost && !material->isTransparent() && prepass;
+        fragment_shader = material->m_depth_only_fragment_shader;
+        write_color = false;
+        depth_write = true;
+        break;
     case GWPT_SOLID:
         valid = !ghost && !material->isTransparent();
+        if (prepass)
+        {
+            depth_write = false;
+            depth_compare = wgpu::CompareFunction::Equal;
+        }
         break;
     case GWPT_GHOST_DEPTH:
         valid = ghost;
@@ -332,7 +347,7 @@ wgpu::RenderPipeline getPipeline(const std::string& shader, bool skinning,
     std::array<wgpu::ColorTargetState, 2> targets = {};
     unsigned target_count = 1;
     targets[0].format = color_format;
-    if (pt == GWPT_SOLID && c.m_deferred)
+    if ((pt == GWPT_DEPTH || pt == GWPT_SOLID) && c.m_deferred)
     {
         targets[0].format = targets[1].format =
             GEWGPUDeferredFBO::GBUFFER_FORMAT;
@@ -350,7 +365,10 @@ wgpu::RenderPipeline getPipeline(const std::string& shader, bool skinning,
     if (write_color && (alphablend || additive))
         targets[0].blend = &blend;
     if (!write_color)
-        targets[0].writeMask = wgpu::ColorWriteMask::None;
+    {
+        for (wgpu::ColorTargetState& target : targets)
+            target.writeMask = wgpu::ColorWriteMask::None;
+    }
 
     wgpu::FragmentState fragment;
     fragment.module = GEWGPUShaderManager::getShader(fragment_shader);
@@ -978,6 +996,7 @@ void GEWGPUDrawCall::render(wgpu::RenderPassEncoder& pass,
 {
     if (!beginRendering(pass))
         return;
+    renderPass(pass, GWPT_DEPTH, color_format);
     renderPass(pass, GWPT_SOLID, color_format);
     if (m_skybox_renderer)
     {
@@ -993,6 +1012,7 @@ void GEWGPUDrawCall::renderGBuffer(wgpu::RenderPassEncoder& pass)
 {
     if (!beginRendering(pass))
         return;
+    renderPass(pass, GWPT_DEPTH, GEWGPUDeferredFBO::GBUFFER_FORMAT);
     renderPass(pass, GWPT_SOLID, GEWGPUDeferredFBO::GBUFFER_FORMAT);
 }   // renderGBuffer
 
