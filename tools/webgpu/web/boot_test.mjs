@@ -6,6 +6,7 @@
 // STEPS_JSON runs after the wait, e.g. to click through the first-run screens:
 //   '[{"click":[457,540]},{"wait":2000},{"key":"Enter"},{"type":"text"},{"shot":"b.png"}]'
 // {"down":"ArrowUp"} / {"up":"ArrowUp"} hold and release a key.
+// DPR=2 in the environment emulates a HiDPI display (clicks stay in CSS px).
 //
 // Needs Playwright (global npm module) and its Chromium. ANGLE/SwiftShader GL
 // is required for the compositor: without it Chromium cannot create the
@@ -29,7 +30,8 @@ const browser = await chromium.launch({
          '--use-webgpu-adapter=swiftshader',
          '--use-gl=angle', '--use-angle=swiftshader'],
 });
-const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 },
+  deviceScaleFactor: Number(process.env.DPR || 1) });
 const start = Date.now();
 const t = () => ((Date.now() - start) / 1000).toFixed(1).padStart(6);
 // Strip the terminal colour codes of STK's log

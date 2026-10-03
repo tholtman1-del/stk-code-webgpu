@@ -61,8 +61,10 @@ Cloud session notes:
   WebGPU mesh buffers exist (Next 2).
 - `CIrrDeviceSDL`: `EDT_WEBGPU` window (no GL/Vulkan flags) and driver;
   Irrlicht's `CSceneManager` until a WebGPU GE scene manager exists.
-  `stkirrlicht` compiles for wasm. No HiDPI yet: SDL owns the canvas size in
-  CSS pixels and the surface is sized from `WindowSize`.
+  `stkirrlicht` compiles for wasm. HiDPI: `SDL_WINDOW_ALLOW_HIGHDPI`, the
+  driver's ScreenSize is the canvas size in pixels
+  (`SDL_GetWindowSizeInPixels`), mouse input is scaled by CIrrDeviceSDL.
+  `DPR=2 node boot_test.mjs ...` tests it.
 - `src/online/http_request_fetch.cpp`: synchronous `emscripten_fetch` on the
   request thread. No progress during a transfer, cancel only checked before
   and after, servers need CORS headers for the game's origin.
@@ -121,7 +123,9 @@ Cloud session notes:
 
 ## Next
 
-1. Performance: async texture decoding, compressed textures, HiDPI.
+1. Performance: async texture decoding, compressed textures. HiDPI
+   renders devicePixelRatio² as many pixels; GE's render scale
+   (`m_render_scale`) is not used by the WebGPU driver yet.
    Streaming: one request per file while a track loads (could be bundled
    per track), streamed files stay in memory once read.
    The depth prepass could be skipped on tiled GPUs (Apple, mobile) if the

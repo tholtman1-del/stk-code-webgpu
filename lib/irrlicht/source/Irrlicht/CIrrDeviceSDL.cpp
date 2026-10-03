@@ -477,8 +477,10 @@ bool CIrrDeviceSDL::createWindow()
 	{
 		// GEWGPUDriver renders to #canvas through its own WebGPU surface, so
 		// no SDL_WINDOW_OPENGL / SDL_WINDOW_VULKAN and no WebGL context.
-		// SDL_WINDOW_ALLOW_HIGHDPI is not set either: the driver sizes its
-		// surface from WindowSize, which must match the canvas pixel size.
+		// With SDL_WINDOW_ALLOW_HIGHDPI the canvas has devicePixelRatio
+		// pixels per CSS pixel, the driver sizes its surface from
+		// SDL_GetWindowSizeInPixels.
+		flags |= SDL_WINDOW_ALLOW_HIGHDPI;
 #if SDL_VERSION_ATLEAST(2, 0, 12)
 		SDL_SetHint(SDL_HINT_VIDEO_EXTERNAL_CONTEXT, "1");
 #endif

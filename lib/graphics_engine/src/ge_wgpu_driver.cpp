@@ -23,6 +23,7 @@
 #include "../source/Irrlicht/os.h"
 
 #include <emscripten.h>
+#include <SDL_video.h>
 #include <emscripten/threading.h>
 
 #include <algorithm>
@@ -76,6 +77,7 @@ GEWGPUDriver::GEWGPUDriver(const SIrrlichtCreationParameters& params,
     m_surface = m_instance.CreateSurface(&surface_desc);
     m_surface_format = ge_wgpu_preferred_format_is_rgba() ?
         wgpu::TextureFormat::RGBA8Unorm : wgpu::TextureFormat::BGRA8Unorm;
+    CNullDriver::OnResize(getPixelSize(params.WindowSize));
     configureSurface();
 
     m_vendor_info = "WebGPU";
@@ -282,10 +284,25 @@ void GEWGPUDriver::onTextureDestroyed(const GEWGPUTexture* texture)
 }   // onTextureDestroyed
 
 // ----------------------------------------------------------------------------
+core::dimension2du GEWGPUDriver::getPixelSize(
+                                         const core::dimension2du& size) const
+{
+    // With SDL_WINDOW_ALLOW_HIGHDPI the window size is in CSS pixels and the
+    // canvas has devicePixelRatio times more. ScreenSize is in canvas pixels,
+    // CIrrDeviceSDL scales the mouse input by ScreenSize / window size.
+    int w = 0, h = 0;
+    if (m_params.m_sdl_window)
+        SDL_GetWindowSizeInPixels(m_params.m_sdl_window, &w, &h);
+    if (w <= 0 || h <= 0)
+        return size;
+    return core::dimension2du(w, h);
+}   // getPixelSize
+
+// ----------------------------------------------------------------------------
 void GEWGPUDriver::OnResize(const core::dimension2d<u32>& size)
 {
     m_params.WindowSize = size;
-    CNullDriver::OnResize(size);
+    CNullDriver::OnResize(getPixelSize(size));
     m_clip = getFullscreenClip();
     configureSurface();
 }   // OnResize

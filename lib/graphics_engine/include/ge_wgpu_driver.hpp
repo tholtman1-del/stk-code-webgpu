@@ -261,6 +261,9 @@ public:
     // ------------------------------------------------------------------------
     virtual SDL_Window* getSDLWindow() const   { return m_params.m_sdl_window; }
     // ------------------------------------------------------------------------
+    /** Canvas size in pixels for a window size in CSS pixels */
+    core::dimension2du getPixelSize(const core::dimension2du& size) const;
+    // ------------------------------------------------------------------------
     virtual void setMeshSamplerUse(GEVulkanSampler sampler)
                                                 { m_mesh_sampler = sampler; }
     // ------------------------------------------------------------------------
