@@ -67,6 +67,10 @@
 #include <unistd.h>
 #endif
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #ifdef __SWITCH__
 extern "C" {
 #define Event libnx_Event
@@ -101,7 +105,8 @@ LRESULT CALLBACK separateProcessProc(_In_ HWND hwnd, _In_ UINT uMsg,
 // ----------------------------------------------------------------------------
 MainLoop::MainLoop(unsigned parent_pid, bool download_assets)
         : m_abort(false), m_request_abort(false), m_paused(false),
-          m_ticks_adjustment(0), m_parent_pid(parent_pid)
+          m_ticks_adjustment(0), m_parent_pid(parent_pid),
+          m_left_over_time(0)
 {
     m_curr_time       = std::chrono::steady_clock::now();
     m_prev_time       = std::chrono::steady_clock::now();
@@ -110,6 +115,7 @@ MainLoop::MainLoop(unsigned parent_pid, bool download_assets)
     m_frame_before_loading_world = false;
     m_download_assets = download_assets;
 #ifdef WIN32
+    m_parent_handle = nullptr;
     if (parent_pid != 0)
     {
         core::stringw class_name = L"separate_process";
@@ -264,6 +270,9 @@ double MainLoop::getLimitedDt()
     // with clients (server time is supposed to be behind client time).
     // So we play it safe by adding a loop to make sure at least 1ms
     // (minimum time that can be handled by the integer timer) delay here.
+    // In the browser requestAnimationFrame paces the frames and the main
+    // thread must not block, so a zero dt just means no time step.
+#ifndef __EMSCRIPTEN__
     while (dt == 0)
     {
         StkTime::sleep(1);
@@ -275,6 +284,7 @@ double MainLoop::getLimitedDt()
         }
         dt = convertToTime(m_curr_time, m_prev_time);
     }
+#endif
 
     const World* const world = World::getWorld();
     if (UserConfigParams::m_fps_debug && world)
@@ -400,9 +410,7 @@ void MainLoop::updateRace(int ticks, bool fast_forward)
 void MainLoop::run()
 {
     m_curr_time = std::chrono::steady_clock::now();
-    // DT keeps track of the leftover time, since the race update
-    // happens in fixed timesteps
-    double left_over_time = 0;
+    m_left_over_time = 0;
 
 #ifdef WIN32
     HANDLE parent = 0;
@@ -415,10 +423,52 @@ void MainLoop::run()
                 "may not be auto destroyed when parent is terminated");
         }
     }
+    m_parent_handle = parent;
 #endif
 
+#ifdef __EMSCRIPTEN__
+    // The browser drives the loop with requestAnimationFrame (fps 0). With
+    // simulate_infinite_loop the stack unwinds here, so nothing after
+    // run() in main() executes; shutdown is handled when m_abort is set.
+    emscripten_set_main_loop_arg([](void* arg)
+        {
+            MainLoop* ml = (MainLoop*)arg;
+            if (!ml->m_abort)
+                ml->runFrame();
+            if (!ml->m_abort)
+                return;
+            emscripten_cancel_main_loop();
+            Log::info("MainLoop", "Main loop aborted, stopping.");
+            // Full cleanup (cleanSuperTuxKart) is skipped in the browser,
+            // only stop the music and save the player data and config.
+            if (music_manager)
+                music_manager->stopMusic();
+            PlayerManager::get()->save();
+            if (user_config)
+                user_config->saveConfig();
+            Log::flushBuffers();
+        }, this, 0, true);
+#else
     while (!m_abort)
-    {
+        runFrame();
+#endif
+
+#ifdef WIN32
+    if (parent != 0 && parent != INVALID_HANDLE_VALUE)
+        CloseHandle(parent);
+    m_parent_handle = nullptr;
+#endif
+
+}   // run
+
+// ----------------------------------------------------------------------------
+/** Runs one iteration of the main loop, see run(). */
+void MainLoop::runFrame()
+{
+#ifdef WIN32
+    HANDLE parent = (HANDLE)m_parent_handle;
+#endif
+    {   // Former body of the while loop in run()
 #ifdef __SWITCH__
       // This feeds us messages (like when the Switch sleeps or requests an exit)
       m_abort = !appletMainLoop();
@@ -455,12 +505,14 @@ void MainLoop::run()
 #endif
 
         PROFILER_PUSH_CPU_MARKER("Main loop", 0xFF, 0x00, 0xF7);
+#ifndef __EMSCRIPTEN__
         TimePoint frame_start = std::chrono::steady_clock::now();
+#endif
 
-        left_over_time += getLimitedDt();
-        int num_steps   = stk_config->time2Ticks(left_over_time);
+        m_left_over_time += getLimitedDt();
+        int num_steps   = stk_config->time2Ticks(m_left_over_time);
         float dt = stk_config->ticks2Time(1);
-        left_over_time -= num_steps * dt;
+        m_left_over_time -= num_steps * dt;
 
         // Shutdown next frame if shutdown request is sent while loading the
         // world
@@ -659,7 +711,7 @@ void MainLoop::run()
                     // Reset the timer for correct time for cutscene
                     m_frame_before_loading_world = false;
                     m_curr_time = std::chrono::steady_clock::now();
-                    left_over_time = 0.0;
+                    m_left_over_time = 0.0;
                     break;
                 }
 
@@ -691,7 +743,7 @@ void MainLoop::run()
                     // irr_driver->getDevice()->run() loads the world
                     m_frame_before_loading_world = false;
                     m_curr_time = std::chrono::steady_clock::now();
-                    left_over_time = 0.0;
+                    m_left_over_time = 0.0;
                 }
 
                 if (abort)
@@ -708,6 +760,9 @@ void MainLoop::run()
             }
         }
 
+#ifndef __EMSCRIPTEN__
+        // In the browser requestAnimationFrame paces the frames, and the
+        // main thread must not block.
         if (!UserConfigParams::m_benchmark)
         {
             TimePoint frame_end = std::chrono::steady_clock::now();
@@ -734,17 +789,12 @@ void MainLoop::run()
                 PROFILER_POP_CPU_MARKER();
             }
         }
+#endif
 
         PROFILER_POP_CPU_MARKER();   // MainLoop pop
         PROFILER_SYNC_FRAME();
-    }  // while !m_abort
-
-#ifdef WIN32
-    if (parent != 0 && parent != INVALID_HANDLE_VALUE)
-        CloseHandle(parent);
-#endif
-
-}   // run
+    }
+}   // runFrame
 
 // ----------------------------------------------------------------------------
 /** Renders the GUI. This function is used during loading a track to get a

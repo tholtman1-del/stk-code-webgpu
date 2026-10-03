@@ -53,6 +53,14 @@ private:
     TimePoint m_curr_time;
     TimePoint m_prev_time;
     unsigned m_parent_pid;
+    /** Leftover time not yet simulated, since the race update happens in
+     *  fixed timesteps. */
+    double   m_left_over_time;
+#ifdef WIN32
+    /** HANDLE of the parent process (void* to avoid including windows.h). */
+    void*    m_parent_handle;
+#endif
+    void     runFrame();
     double   getLimitedDt();
     void     updateRace(int ticks, bool fast_forward);
     double   convertToTime(const TimePoint& cur, const TimePoint& prev) const
