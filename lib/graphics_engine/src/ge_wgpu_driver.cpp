@@ -17,6 +17,7 @@
 #include "ge_wgpu_shader_manager.hpp"
 #include "ge_wgpu_skybox_renderer.hpp"
 #include "ge_wgpu_texture.hpp"
+#include "ge_wgpu_texture_loader.hpp"
 #include "mini_glm.hpp"
 
 #include "IrrlichtDevice.h"
@@ -64,6 +65,7 @@ GEWGPUDriver::GEWGPUDriver(const SIrrlichtCreationParameters& params,
     if (!m_device)
         throw std::runtime_error("No WebGPU device was provided by the page");
     m_queue = m_device.GetQueue();
+    GEWGPUTextureLoader::init();
     m_instance = wgpu::CreateInstance(nullptr);
 
     wgpu::Limits limits;
@@ -104,6 +106,7 @@ GEWGPUDriver::~GEWGPUDriver()
 // ----------------------------------------------------------------------------
 void GEWGPUDriver::destroyDriver()
 {
+    GEWGPUTextureLoader::destroy();
     if (m_white_texture)
     {
         m_white_texture->drop();

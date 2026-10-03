@@ -126,6 +126,7 @@ function showError(title, html, details, isError = true) {
   if (failed) return;
   failed = true;
   ui.overlay.hidden = false;
+  ui.bar.hidden = true;
   if (isError) ui.overlay.classList.add('error');
   ui.title.textContent = title;
   ui.status.innerHTML = html;

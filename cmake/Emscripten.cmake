@@ -76,7 +76,7 @@ function(stk_web_configure_target target)
     target_link_options(${target} PRIVATE
         ${STK_WEB_PORTS}
         -pthread -fwasm-exceptions --use-port=emdawnwebgpu
-        -sPTHREAD_POOL_SIZE=8
+        -sPTHREAD_POOL_SIZE=12
         -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=512MB -sMAXIMUM_MEMORY=4GB
         -sSTACK_SIZE=4MB -sDEFAULT_PTHREAD_STACK_SIZE=1MB
         -sFETCH=1 -sFORCE_FILESYSTEM=1 -lidbfs.js

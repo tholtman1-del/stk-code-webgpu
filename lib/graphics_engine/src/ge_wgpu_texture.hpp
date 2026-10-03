@@ -3,8 +3,12 @@
 
 #include <webgpu/webgpu_cpp.h>
 
+#include <condition_variable>
 #include <functional>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <vector>
 #include <ITexture.h>
 #include <IImage.h>
 
@@ -13,12 +17,15 @@ using namespace irr;
 namespace GE
 {
 class GEWGPUDriver;
+struct GEImageLevel;
 
 /** Sampled 2D texture for the WebGPU driver. Pixels are kept in Irrlicht's
  *  native BGRA order (so no per-pixel swizzle is needed on upload), with an
  *  additional sRGB view for the PBR pipeline. WebGPU objects may only be
  *  touched on the browser main thread, so uploads requested from other
- *  threads are deferred to it and a placeholder is sampled meanwhile. */
+ *  threads are deferred to it and a placeholder is sampled meanwhile.
+ *  Files are read on the creating thread and decoded (with mipmaps) by
+ *  GEWGPUTextureLoader; the size and view getters wait for that. */
 class GEWGPUTexture : public video::ITexture
 {
 protected:
@@ -48,12 +55,35 @@ protected:
 
     unsigned m_texture_size;
 
+    // Decoding by a loader thread: m_decoding is guarded by m_decode_mutex,
+    // m_decoded holds the result until the main thread uploads it
+    struct Decoded;
+
+    mutable std::mutex m_decode_mutex;
+
+    mutable std::condition_variable m_decode_cv;
+
+    bool m_decoding;
+
+    std::shared_ptr<Decoded> m_decoded;
+
     // ------------------------------------------------------------------------
     void upload(video::IImage* image);
     // ------------------------------------------------------------------------
     void createTexture(wgpu::TextureFormat format, wgpu::TextureUsage usage);
     // ------------------------------------------------------------------------
     void uploadLevels(const uint8_t* data, unsigned channels);
+    // ------------------------------------------------------------------------
+    void writeLevels(const std::vector<GEImageLevel>& levels,
+                     unsigned channels);
+    // ------------------------------------------------------------------------
+    void decode(std::shared_ptr<std::vector<uint8_t> > bytes);
+    // ------------------------------------------------------------------------
+    /** Waits until the loader thread decoded the file (if it is decoding). */
+    void waitDecoded() const;
+    // ------------------------------------------------------------------------
+    /** Main thread: uploads a decoded image waiting for upload. */
+    void uploadDecoded();
     // ------------------------------------------------------------------------
     void clearGPUData();
     // ------------------------------------------------------------------------
@@ -78,9 +108,10 @@ public:
     virtual void unlock();
     // ------------------------------------------------------------------------
     virtual const core::dimension2d<u32>& getOriginalSize() const
-                                                       { return m_orig_size; }
+                                     { waitDecoded(); return m_orig_size; }
     // ------------------------------------------------------------------------
-    virtual const core::dimension2d<u32>& getSize() const   { return m_size; }
+    virtual const core::dimension2d<u32>& getSize() const
+                                          { waitDecoded(); return m_size; }
     // ------------------------------------------------------------------------
     virtual video::E_DRIVER_TYPE getDriverType() const
                                                   { return video::EDT_WEBGPU; }
@@ -90,7 +121,8 @@ public:
     // ------------------------------------------------------------------------
     virtual u32 getPitch() const                                  { return 0; }
     // ------------------------------------------------------------------------
-    virtual bool hasMipMaps() const                   { return m_has_mipmaps; }
+    virtual bool hasMipMaps() const
+                                    { waitDecoded(); return m_has_mipmaps; }
     // ------------------------------------------------------------------------
     virtual void regenerateMipMapLevels(void* mipmap_data = NULL)            {}
     // ------------------------------------------------------------------------
@@ -106,8 +138,8 @@ public:
     // ------------------------------------------------------------------------
     virtual const io::path& getFullPath() const         { return m_full_path; }
     // ------------------------------------------------------------------------
-    /** Returns the view to sample, or the driver placeholder if the texture is
-     *  not uploaded yet. */
+    /** Returns the view to sample (main thread), or the driver placeholder if
+     *  the texture is not uploaded yet. Waits for decoding. */
     const wgpu::TextureView& getView(bool srgb = false) const;
     // ------------------------------------------------------------------------
     bool isReady() const                         { return m_view != nullptr; }

@@ -99,6 +99,7 @@ set(GE_SOURCES
     src/ge_wgpu_shader_manager.cpp
     src/ge_wgpu_skybox_renderer.cpp
     src/ge_wgpu_texture.cpp
+    src/ge_wgpu_texture_loader.cpp
 )
 else()
 set(GE_SOURCES

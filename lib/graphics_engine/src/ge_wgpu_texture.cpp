@@ -4,9 +4,13 @@
 #include "ge_mipmap_generator.hpp"
 #include "ge_texture.hpp"
 #include "ge_wgpu_driver.hpp"
+#include "ge_wgpu_texture_loader.hpp"
 
 #include <IAttributes.h>
 #include <IFileSystem.h>
+#include <IReadFile.h>
+
+#include <emscripten/threading.h>
 
 #include <algorithm>
 #include <cmath>
@@ -16,13 +20,28 @@
 
 namespace GE
 {
+/** A decoded image and its mipmaps, waiting for the main thread to upload. */
+struct GEWGPUTexture::Decoded
+{
+    video::IImage* m_image = NULL;
+    // Level 0 points into m_image
+    std::unique_ptr<GEMipmapGenerator> m_mipmaps;
+    // ------------------------------------------------------------------------
+    ~Decoded()
+    {
+        m_mipmaps.reset();
+        if (m_image)
+            m_image->drop();
+    }
+};   // Decoded
+
 // ----------------------------------------------------------------------------
 GEWGPUTexture::GEWGPUTexture(const std::string& name, bool single_channel)
              : video::ITexture(name.c_str()), m_image_mani(nullptr),
                m_locked_data(NULL), m_format(wgpu::TextureFormat::BGRA8Unorm),
                m_disable_reload(true), m_single_channel(single_channel),
                m_has_mipmaps(true), m_driver(getWGPUDriver()),
-               m_texture_size(0)
+               m_texture_size(0), m_decoding(false)
 {
 }   // GEWGPUTexture
 
@@ -33,7 +52,7 @@ GEWGPUTexture::GEWGPUTexture(const std::string& path,
                m_locked_data(NULL), m_format(wgpu::TextureFormat::BGRA8Unorm),
                m_disable_reload(false), m_single_channel(false),
                m_has_mipmaps(true), m_driver(getWGPUDriver()),
-               m_texture_size(0)
+               m_texture_size(0), m_decoding(false)
 {
     m_full_path = getDriver()->getFileSystem()->getAbsolutePath(NamedPath);
     if (!getDriver()->getFileSystem()->existFileOnly(m_full_path))
@@ -85,6 +104,8 @@ GEWGPUTexture::GEWGPUTexture(const std::string& name, unsigned int size,
 // ----------------------------------------------------------------------------
 GEWGPUTexture::~GEWGPUTexture()
 {
+    // A loader thread may still use this texture
+    waitDecoded();
     unlock();
     // Also cancels pending uploads that reference this texture
     m_driver->onTextureDestroyed(this);
@@ -113,19 +134,104 @@ void GEWGPUTexture::clearGPUData()
 // ----------------------------------------------------------------------------
 void GEWGPUTexture::loadFromFile()
 {
-    core::dimension2du max_size = getDriver()->getDriverAttributes()
-        .getAttributeAsDimension2d("MAX_TEXTURE_SIZE");
-    video::IImage* image = getResizedImageFullPath(m_full_path, max_size,
-        &m_orig_size);
-    if (image == NULL)
+    // Read here: streamed files are fetched by the main thread, which a
+    // loader thread could wait for a long time
+    io::IReadFile* file = io::createReadFile(m_full_path);
+    if (file == NULL)
     {
         LoadingFailed = true;
         return;
     }
-    if (m_image_mani)
-        m_image_mani(image);
-    upload(image);
+    auto bytes = std::make_shared<std::vector<uint8_t> >(file->getSize());
+    const bool read = file->read(bytes->data(), bytes->size()) ==
+        (s32)bytes->size();
+    file->drop();
+    if (!read)
+    {
+        LoadingFailed = true;
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_decode_mutex);
+        m_decoding = true;
+    }
+    GEWGPUTextureLoader::add(this, [this, bytes]() { decode(bytes); });
 }   // loadFromFile
+
+// ----------------------------------------------------------------------------
+void GEWGPUTexture::decode(std::shared_ptr<std::vector<uint8_t> > bytes)
+{
+    io::IReadFile* file = io::createMemoryReadFile(bytes->data(),
+        bytes->size(), m_full_path, false/*deleteMemoryWhenDropped*/);
+    core::dimension2du max_size = getDriver()->getDriverAttributes()
+        .getAttributeAsDimension2d("MAX_TEXTURE_SIZE");
+    core::dimension2du orig_size;
+    video::IImage* image = getResizedImage(file, max_size, &orig_size);
+    file->drop();
+    std::shared_ptr<Decoded> decoded;
+    if (image)
+    {
+        if (m_image_mani)
+            m_image_mani(image);
+        decoded = std::make_shared<Decoded>();
+        decoded->m_image = image;
+        const core::dimension2du size = image->getDimension();
+        if (size.Width >= 4 && size.Height >= 4)
+        {
+            const bool normal_map = (std::string(NamedPath.getPtr()).find(
+                "_Normal.") != std::string::npos);
+            decoded->m_mipmaps.reset(new GEMipmapGenerator(
+                (uint8_t*)image->lock(), 4, size, normal_map));
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_decode_mutex);
+        if (decoded)
+        {
+            m_orig_size = orig_size;
+            m_size = decoded->m_image->getDimension();
+            m_has_mipmaps = decoded->m_mipmaps != nullptr;
+            m_decoded = decoded;
+        }
+        // Failed decoding keeps the placeholder
+        m_decoding = false;
+    }
+    m_decode_cv.notify_all();
+    if (decoded)
+        m_driver->runOnMainThread([this]() { uploadDecoded(); }, this);
+}   // decode
+
+// ----------------------------------------------------------------------------
+void GEWGPUTexture::waitDecoded() const
+{
+    {
+        std::lock_guard<std::mutex> lock(m_decode_mutex);
+        if (!m_decoding)
+            return;
+    }
+    // Decode it here if no loader thread started yet
+    GEWGPUTextureLoader::runNow(this);
+    std::unique_lock<std::mutex> lock(m_decode_mutex);
+    m_decode_cv.wait(lock, [this]() { return !m_decoding; });
+}   // waitDecoded
+
+// ----------------------------------------------------------------------------
+void GEWGPUTexture::uploadDecoded()
+{
+    std::shared_ptr<Decoded> decoded;
+    {
+        std::lock_guard<std::mutex> lock(m_decode_mutex);
+        decoded.swap(m_decoded);
+    }
+    if (!decoded)
+        return;
+    createTexture(wgpu::TextureFormat::BGRA8Unorm,
+        wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst);
+    if (decoded->m_mipmaps)
+        writeLevels(decoded->m_mipmaps->getAllLevels(), 4);
+    else
+        uploadLevels((const uint8_t*)decoded->m_image->lock(), 4);
+}   // uploadDecoded
 
 // ----------------------------------------------------------------------------
 /** Takes ownership of the image (drops it). */
@@ -205,7 +311,16 @@ void GEWGPUTexture::uploadLevels(const uint8_t* data, unsigned channels)
     const bool normal_map = (std::string(NamedPath.getPtr()).find(
         "_Normal.") != std::string::npos);
     GEMipmapGenerator generator((uint8_t*)data, channels, m_size, normal_map);
-    std::vector<GEImageLevel>& levels = generator.getAllLevels();
+    writeLevels(generator.getAllLevels(), channels);
+}   // uploadLevels
+
+// ----------------------------------------------------------------------------
+void GEWGPUTexture::writeLevels(const std::vector<GEImageLevel>& levels,
+                                unsigned channels)
+{
+    const wgpu::Queue& queue = m_driver->getQueue();
+    wgpu::TexelCopyTextureInfo dst;
+    dst.texture = m_texture;
     for (unsigned i = 0; i < levels.size(); i++)
     {
         const GEImageLevel& level = levels[i];
@@ -217,11 +332,15 @@ void GEWGPUTexture::uploadLevels(const uint8_t* data, unsigned channels)
         queue.WriteTexture(&dst, level.m_data, level.m_size, &layout,
             &extent);
     }
-}   // uploadLevels
+}   // writeLevels
 
 // ----------------------------------------------------------------------------
 const wgpu::TextureView& GEWGPUTexture::getView(bool srgb) const
 {
+    // Drawing needs it now (as GEVulkanTexture::getTextureHandler waits)
+    waitDecoded();
+    if (emscripten_is_main_browser_thread())
+        const_cast<GEWGPUTexture*>(this)->uploadDecoded();
     if (!m_view)
     {
         return static_cast<GEWGPUTexture*>(m_driver->getTransparentTexture())
@@ -236,6 +355,7 @@ const wgpu::TextureView& GEWGPUTexture::getView(bool srgb) const
  *  again) can be locked. */
 void* GEWGPUTexture::lock(video::E_TEXTURE_LOCK_MODE mode, u32 mipmap_level)
 {
+    waitDecoded();
     if (m_full_path.empty())
         return NULL;
     video::IImage* image = getResizedImageFullPath(m_full_path,
@@ -266,6 +386,11 @@ void GEWGPUTexture::reload()
 {
     if (m_disable_reload)
         return;
+    waitDecoded();
+    {
+        std::lock_guard<std::mutex> lock(m_decode_mutex);
+        m_decoded.reset();
+    }
     m_driver->onTextureDestroyed(this);
     clearGPUData();
     loadFromFile();

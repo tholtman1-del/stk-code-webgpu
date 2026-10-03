@@ -117,13 +117,18 @@ Cloud session notes:
   pyramid per camera with `hiz_depth.comp`.
 - PBR depth prepass (`GWPT_DEPTH`, then solid with an equal depth test), as
   the Vulkan renderer on non-tiled GPUs.
+- Textures are decoded (and mipmapped) by loader threads
+  (`GEWGPUTextureLoader`); files are read on the creating thread, the
+  getters wait for decoding, `getView()` uploads on demand. Hacienda race
+  start 9.5 s -> 5.5 s under SwiftShader.
 - Browser logs go to `console.log/warn/error` without terminal colour codes.
   Exceptions in a frame are caught like `main()` does and stop the game;
   the page shows `Module.onGameStopped` (also after quitting).
 
 ## Next
 
-1. Performance: async texture decoding, compressed textures. HiDPI
+1. Performance: compressed textures (BC/ASTC, the adapter has both under
+   SwiftShader; GE's compressors could run on the loader threads). HiDPI
    renders devicePixelRatio² as many pixels; GE's render scale
    (`m_render_scale`) is not used by the WebGPU driver yet.
    Streaming: one request per file while a track loads (could be bundled
