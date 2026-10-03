@@ -65,7 +65,7 @@ namespace Online
         /** String to store the received data in. */
         std::string m_string_buffer;
 
-#ifdef APPLE_NETWORK_LIBRARIES
+#if defined(APPLE_NETWORK_LIBRARIES) || defined(__EMSCRIPTEN__)
         std::string m_error_string;
 #endif
 
