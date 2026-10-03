@@ -362,6 +362,7 @@ void GEWGPUDrawCall::reset()
     m_skinning.clear();
     m_push_constants_offsets.clear();
     m_skybox_renderer = NULL;
+    m_camera = NULL;
 }   // reset
 
 // ----------------------------------------------------------------------------

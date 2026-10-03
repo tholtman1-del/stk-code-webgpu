@@ -10,6 +10,7 @@
 #include "ge_wgpu_camera_scene_node.hpp"
 #include "ge_wgpu_draw_call.hpp"
 #include "ge_wgpu_dynamic_spm_buffer.hpp"
+#include "ge_wgpu_fbo_texture.hpp"
 #include "ge_wgpu_mesh_cache.hpp"
 #include "ge_wgpu_scene_manager.hpp"
 #include "ge_wgpu_shader_manager.hpp"
@@ -53,7 +54,8 @@ GEWGPUDriver::GEWGPUDriver(const SIrrlichtCreationParameters& params,
             : GEDriver(io, params.WindowSize), m_params(params),
               m_irrlicht_device(device), m_mesh_sampler(GVS_3D_MESH_MIPMAP_16),
               m_max_texture_size(8192), m_white_texture(NULL),
-              m_transparent_texture(NULL), m_billboard_quad(NULL)
+              m_transparent_texture(NULL), m_billboard_quad(NULL),
+              m_rtt_texture(NULL)
 {
     // Created by the page (asynchronously) before main() was called
     m_device = wgpu::Device::Acquire(emscripten_webgpu_get_device());
@@ -382,9 +384,56 @@ bool GEWGPUDriver::setRenderTarget(video::ITexture* texture,
                                    bool clearBackBuffer, bool clearZBuffer,
                                    SColor color)
 {
-    // Render to texture is not implemented yet, draw into the screen
-    return texture == NULL;
+    m_rtt_texture = dynamic_cast<GEWGPUFBOTexture*>(texture);
+    m_rtt_clear_color = color;
+    return texture == NULL || m_rtt_texture != NULL;
 }   // setRenderTarget
+
+// ----------------------------------------------------------------------------
+ITexture* GEWGPUDriver::addRenderTargetTexture(const core::dimension2d<u32>& size,
+                                              const io::path& name,
+                                              const ECOLOR_FORMAT format,
+                                              const bool useStencil)
+{
+    // Not added to the texture cache, the caller drops it (GL1RenderTarget)
+    return new GEWGPUFBOTexture(size, name.c_str());
+}   // addRenderTargetTexture
+
+// ----------------------------------------------------------------------------
+const core::dimension2d<u32>& GEWGPUDriver::getCurrentRenderTargetSize() const
+{
+    return m_rtt_texture ? m_rtt_texture->getSize() : ScreenSize;
+}   // getCurrentRenderTargetSize
+
+// ----------------------------------------------------------------------------
+void GEWGPUDriver::renderToTexture(GEWGPUDrawCall* dc)
+{
+    if (!m_rtt_texture)
+        return;
+    dc->upload();
+    wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
+    wgpu::RenderPassColorAttachment color;
+    color.view = m_rtt_texture->getColorView();
+    color.loadOp = wgpu::LoadOp::Clear;
+    color.storeOp = wgpu::StoreOp::Store;
+    video::SColorf cf(m_rtt_clear_color);
+    color.clearValue = { cf.r, cf.g, cf.b, cf.a };
+    wgpu::RenderPassDepthStencilAttachment depth;
+    depth.view = m_rtt_texture->getDepthView();
+    depth.depthLoadOp = wgpu::LoadOp::Clear;
+    depth.depthStoreOp = wgpu::StoreOp::Discard;
+    depth.depthClearValue = 1.0f;
+    wgpu::RenderPassDescriptor pass_desc;
+    pass_desc.colorAttachmentCount = 1;
+    pass_desc.colorAttachments = &color;
+    pass_desc.depthStencilAttachment = &depth;
+    wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&pass_desc);
+    dc->render(pass, m_rtt_texture->getFormat());
+    pass.End();
+    wgpu::CommandBuffer commands = encoder.Finish();
+    m_queue.Submit(1, &commands);
+    dc->reset();
+}   // renderToTexture
 
 // ----------------------------------------------------------------------------
 void GEWGPUDriver::setViewPort(const core::rect<s32>& area)

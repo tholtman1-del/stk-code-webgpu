@@ -21,6 +21,8 @@ using namespace video;
 
 namespace GE
 {
+class GEWGPUDrawCall;
+class GEWGPUFBOTexture;
 class GEWGPUSkyBoxRenderer;
 class GEWGPUTexture;
 
@@ -198,8 +200,7 @@ public:
                                              const io::path& name,
                                              const ECOLOR_FORMAT format =
                                              ECF_UNKNOWN,
-                                             const bool useStencil = false)
-                                                               { return NULL; }
+                                             const bool useStencil = false);
     // ------------------------------------------------------------------------
     virtual void clearZBuffer()                                             {}
     // ------------------------------------------------------------------------
@@ -234,8 +235,7 @@ public:
     // ------------------------------------------------------------------------
     virtual void disableScissorTest()        { m_clip = getFullscreenClip(); }
     // ------------------------------------------------------------------------
-    virtual const core::dimension2d<u32>& getCurrentRenderTargetSize() const
-                                                          { return ScreenSize; }
+    virtual const core::dimension2d<u32>& getCurrentRenderTargetSize() const;
     // GEDriver interface
     // ------------------------------------------------------------------------
     virtual void updateDriver(bool scale_changed = true,
@@ -307,6 +307,13 @@ public:
     // ------------------------------------------------------------------------
     GEWGPUSkyBoxRenderer* getSkyBoxRenderer() const
                                            { return m_skybox_renderer.get(); }
+    // ------------------------------------------------------------------------
+    /** The texture set by setRenderTarget, NULL when drawing to the screen. */
+    GEWGPUFBOTexture* getRenderTargetTexture() const   { return m_rtt_texture; }
+    // ------------------------------------------------------------------------
+    /** Renders a draw call into the current render target texture now, in a
+     *  submit of its own (as GEVulkanSceneManager::drawAll does). */
+    void renderToTexture(GEWGPUDrawCall* dc);
 private:
     // ------------------------------------------------------------------------
     virtual video::ITexture* createDeviceDependentTexture(IImage* surface,
@@ -362,6 +369,8 @@ private:
     video::ITexture* m_transparent_texture;
     scene::IMesh* m_billboard_quad;
     std::unique_ptr<GEWGPUSkyBoxRenderer> m_skybox_renderer;
+    GEWGPUFBOTexture* m_rtt_texture;
+    video::SColor m_rtt_clear_color;
     wgpu::Texture m_depth_texture;
     wgpu::TextureView m_depth_view;
 

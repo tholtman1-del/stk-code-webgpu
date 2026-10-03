@@ -7,6 +7,8 @@
 #include "ge_vulkan_mesh_scene_node.hpp"
 #include "ge_wgpu_camera_scene_node.hpp"
 #include "ge_wgpu_draw_call.hpp"
+#include "ge_wgpu_driver.hpp"
+#include "ge_wgpu_fbo_texture.hpp"
 #include "ge_wgpu_mesh_cache.hpp"
 
 #include "ILightSceneNode.h"
@@ -141,6 +143,13 @@ void GEWGPUSceneManager::drawAll(irr::u32 flags)
         static_cast<GEWGPUCameraSceneNode*>(getActiveCamera());
     if (!cam)
         return;
+    GEWGPUDriver* driver = static_cast<GEWGPUDriver*>(getVideoDriver());
+    GEWGPUFBOTexture* rtt = driver->getRenderTargetTexture();
+    if (rtt)
+    {
+        cam->setViewPort(irr::core::recti(0, 0, rtt->getSize().Width,
+            rtt->getSize().Height));
+    }
     cam->render();
     auto it = m_draw_calls.find(cam);
     if (it == m_draw_calls.end())
@@ -148,6 +157,8 @@ void GEWGPUSceneManager::drawAll(irr::u32 flags)
     it->second->prepare(cam);
     OnRegisterSceneNode();
     it->second->generate();
+    if (rtt)
+        driver->renderToTexture(it->second.get());
 }   // drawAll
 
 // ----------------------------------------------------------------------------

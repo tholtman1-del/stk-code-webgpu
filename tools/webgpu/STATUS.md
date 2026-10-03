@@ -87,20 +87,21 @@ Cloud session notes:
   transparent passes), dynamic mesh buffers (skid marks, shadows), billboards,
   particles and the skybox. Races render (tested on hacienda).
   `ObjectData` and `GECullingTool` are shared with the Vulkan renderer.
+- Render to texture: `GEWGPUFBOTexture` (color + depth), drawn right away
+  in `GEWGPUSceneManager::drawAll()` while it is the render target, like
+  the Vulkan renderer. Race minimap and kart selection previews work.
 - Shader conversion: normals and tangents (A2B10G10R10 snorm, no WebGPU
   vertex format) are read as u32 and unpacked in WGSL; push constants become
   a uniform at `@group(1) @binding(4)` with a dynamic offset.
 
 ## Next
 
-1. Render to texture (`setRenderTarget`, `addRenderTargetTexture`): race
-   minimap, kart models in the kart selection screen
-2. PBR: deferred lighting (light handler, deferred FBO), IBL (environment
+1. PBR: deferred lighting (light handler, deferred FBO), IBL (environment
    maps, compute shaders), displace. `getGEConfig()->m_pbr` is forced off in
    `GEWGPUDriver::beginScene()`. Specialization constants are frozen to
    their defaults by compile_shaders.py, so PBR needs WGSL variants (or
    override constants) for deferred / IBL / skybox
-3. Performance: async texture decoding, compressed textures, asset streaming
+2. Performance: async texture decoding, compressed textures, asset streaming
    (the whole 762 MB package is downloaded and held in memory), HiDPI
-4. Smaller issues: STK's log colour codes show up in the browser console;
+3. Smaller issues: STK's log colour codes show up in the browser console;
    C++ exceptions inside a frame are not caught (`MainLoop::runFrame()`)

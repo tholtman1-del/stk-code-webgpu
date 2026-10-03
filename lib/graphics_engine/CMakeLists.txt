@@ -90,6 +90,7 @@ set(GE_SOURCES
     src/ge_wgpu_draw_call.cpp
     src/ge_wgpu_driver.cpp
     src/ge_wgpu_dynamic_spm_buffer.cpp
+    src/ge_wgpu_fbo_texture.cpp
     src/ge_wgpu_mesh_cache.cpp
     src/ge_wgpu_scene_manager.cpp
     src/ge_wgpu_shader_manager.cpp
