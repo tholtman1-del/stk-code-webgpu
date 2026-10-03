@@ -168,8 +168,8 @@ Cloud session notes:
 ## Next
 
 0. More testing on real GPUs and browsers (tested on the developer's Mac
-   by the user: works): Safari, Firefox, Windows/Linux GPUs, real
-   gamepads; a real static host deployment.
+   by the user: works, also the GitHub Pages demo): Safari, Firefox,
+   Windows/Linux GPUs, real gamepads.
 
 1. Texture compression: BC3 (GECompressorS3TCBC3 on the loader threads)
    works but is off by default in the browser (`enable_texture_compression`):
