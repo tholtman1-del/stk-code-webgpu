@@ -29,6 +29,11 @@
 
 #include <SDL_vulkan.h>
 
+#ifdef _IRR_COMPILE_WITH_WEBGPU_
+// ge_vulkan_driver.hpp is empty without Vulkan, so GEDriver comes from here
+#include "ge_driver.hpp"
+#endif
+
 extern bool GLContextDebugBit;
 
 namespace irr
@@ -46,6 +51,10 @@ namespace irr
 #endif
 #ifdef _IRR_COMPILE_WITH_VULKAN_
 		IVideoDriver* createVulkanDriver(const SIrrlichtCreationParameters& params,
+			io::IFileSystem* io, SDL_Window* win, IrrlichtDevice* device);
+#endif
+#ifdef _IRR_COMPILE_WITH_WEBGPU_
+		IVideoDriver* createWebGPUDriver(const SIrrlichtCreationParameters& params,
 			io::IFileSystem* io, SDL_Window* win, IrrlichtDevice* device);
 #endif
 	} // end namespace video
@@ -198,6 +207,14 @@ CIrrDeviceSDL::CIrrDeviceSDL(const SIrrlichtCreationParameters& param)
 	{
 		if (CreationParams.DriverType == video::EDT_VULKAN)
 			createGUIAndVulkanScene();
+#ifdef _IRR_COMPILE_WITH_WEBGPU_
+		// GEVulkanSceneManager is Vulkan-only (not built for Emscripten),
+		// Irrlicht's CSceneManager is enough for the 2D menus.
+		// TODO (item 7): a GE scene manager for WebGPU (SPM mesh nodes,
+		// GE camera, draw calls) once 3D rendering exists.
+		else if (CreationParams.DriverType == video::EDT_WEBGPU)
+			createGUIAndScene();
+#endif
 		else
 			createGUIAndScene();
 	}
@@ -325,6 +342,7 @@ bool CIrrDeviceSDL::isGyroscopeAvailable()
 }
 
 
+#ifndef _IRR_COMPILE_WITH_WEBGPU_
 bool versionCorrect(int major, int minor)
 {
 #ifdef _IRR_COMPILE_WITH_OGLES2_
@@ -340,6 +358,7 @@ bool versionCorrect(int major, int minor)
 	return false;
 #endif
 }
+#endif // !_IRR_COMPILE_WITH_WEBGPU_
 
 
 // Used in OptionsScreenVideo for live fullscreen toggle for vulkan driver
@@ -460,6 +479,18 @@ bool CIrrDeviceSDL::createWindow()
 #endif
 		flags |= SDL_WINDOW_VULKAN;
 	}
+#ifdef _IRR_COMPILE_WITH_WEBGPU_
+	else if (CreationParams.DriverType == video::EDT_WEBGPU)
+	{
+		// GEWGPUDriver renders to #canvas through its own WebGPU surface, so
+		// no SDL_WINDOW_OPENGL / SDL_WINDOW_VULKAN and no WebGL context.
+		// SDL_WINDOW_ALLOW_HIGHDPI is not set either: the driver sizes its
+		// surface from WindowSize, which must match the canvas pixel size.
+#if SDL_VERSION_ATLEAST(2, 0, 12)
+		SDL_SetHint(SDL_HINT_VIDEO_EXTERNAL_CONTEXT, "1");
+#endif
+	}
+#endif
 
 #ifdef MOBILE_STK
 	flags |= SDL_WINDOW_BORDERLESS | SDL_WINDOW_MAXIMIZED;
@@ -489,6 +520,10 @@ bool CIrrDeviceSDL::createWindow()
 #if SDL_VERSION_ATLEAST(2, 0, 12)
 			if (CreationParams.DriverType == video::EDT_VULKAN)
 				SDL_SetHint(SDL_HINT_VIDEO_EXTERNAL_CONTEXT, "0");
+#ifdef _IRR_COMPILE_WITH_WEBGPU_
+			if (CreationParams.DriverType == video::EDT_WEBGPU)
+				SDL_SetHint(SDL_HINT_VIDEO_EXTERNAL_CONTEXT, "0");
+#endif
 #endif
 			return false;
 		}
@@ -500,6 +535,10 @@ bool CIrrDeviceSDL::createWindow()
 
 void CIrrDeviceSDL::tryCreateOpenGLContext(u32 flags)
 {
+#ifdef _IRR_COMPILE_WITH_WEBGPU_
+	// The WebGPU (browser) build has no OpenGL driver and no glad loader
+	(void)flags;
+#else
 start:
 	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, CreationParams.Doublebuffer);
 	irr::video::useCoreContext = true;
@@ -662,6 +701,7 @@ legacy:
 		CreationParams.Doublebuffer = false;
 		goto start;
 	}
+#endif // _IRR_COMPILE_WITH_WEBGPU_
 }
 
 //! create the driver
@@ -710,6 +750,26 @@ void CIrrDeviceSDL::createDriver()
 		#endif
 		break;
 	}
+
+#ifdef _IRR_COMPILE_WITH_WEBGPU_
+	case video::EDT_WEBGPU:
+	{
+		// Throws if the page did not provide a WebGPU device
+		// (Module.preinitializedWebGPUDevice)
+		try
+		{
+			VideoDriver = video::createWebGPUDriver(CreationParams, FileSystem, Window, this);
+		}
+		catch (std::exception& e)
+		{
+#if SDL_VERSION_ATLEAST(2, 0, 12)
+			SDL_SetHint(SDL_HINT_VIDEO_EXTERNAL_CONTEXT, "0");
+#endif
+			os::Printer::log("createWebGPUDriver failed", e.what(), ELL_ERROR);
+		}
+		break;
+	}
+#endif
 
 	case video::EDT_DIRECT3D9:
 	{
@@ -1660,6 +1720,11 @@ s32 CIrrDeviceSDL::getRightPadding()
 
 void CIrrDeviceSDL::createGUIAndVulkanScene()
 {
+#ifdef _IRR_COMPILE_WITH_WEBGPU_
+	// Never reached (EDT_VULKAN cannot be created in WebGPU builds), and
+	// GEVulkanSceneManager is not compiled for Emscripten
+	createGUIAndScene();
+#else
 	#ifdef _IRR_COMPILE_WITH_GUI_
 	// create gui environment
 	GUIEnvironment = gui::createGUIEnvironment(FileSystem, VideoDriver, Operator);
@@ -1669,6 +1734,7 @@ void CIrrDeviceSDL::createGUIAndVulkanScene()
 	SceneManager = new GE::GEVulkanSceneManager(VideoDriver, FileSystem, CursorControl, GUIEnvironment);
 
 	setEventReceiver(UserReceiver);
+#endif
 }
 
 
