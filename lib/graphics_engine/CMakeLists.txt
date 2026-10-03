@@ -65,6 +65,7 @@ elseif(UNIX OR MINGW)
 endif()
 
 set(GE_COMMON_SOURCES
+    src/ge_compressor_s3tc_bc3.cpp
     src/ge_main.cpp
     src/ge_material_manager.cpp
     src/ge_occlusion_culling.cpp
@@ -74,8 +75,12 @@ set(GE_COMMON_SOURCES
 )
 
 if(EMSCRIPTEN)
+# gl.c only defines the glad function pointers that game code references in
+# its OpenGL paths. They stay unloaded: those paths only run with the OpenGL
+# driver (CentralVideoSettings::isGLSL()), as in the Vulkan build.
 set(GE_SOURCES
     ${GE_COMMON_SOURCES}
+    src/gl.c
     src/ge_wgpu_2d_renderer.cpp
     src/ge_wgpu_driver.cpp
     src/ge_wgpu_shader_manager.cpp
@@ -87,7 +92,6 @@ set(GE_SOURCES
     src/gl.c
     src/ge_compressor_astc_4x4.cpp
     src/ge_compressor_bptc_bc7.cpp
-    src/ge_compressor_s3tc_bc3.cpp
     src/ge_culling_tool.cpp
     src/ge_dx9_texture.cpp
     src/ge_gl_texture.cpp

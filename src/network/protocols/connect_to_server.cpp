@@ -795,7 +795,7 @@ cleanup:
     dns_so_close(so);
     dns_resconf_close(conf);
 
-#else
+#elif !defined(__EMSCRIPTEN__)  // no DNS queries from a browser
     const std::string& utf8name = StringUtils::wideToUtf8(m_server->getName());
     unsigned char response[512] = {};
 

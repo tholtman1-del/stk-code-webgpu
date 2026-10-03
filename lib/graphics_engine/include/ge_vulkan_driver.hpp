@@ -357,7 +357,7 @@ namespace GE
         GEVulkanFBOTexture* getRTTTexture() const      { return m_rtt_texture; }
         GEVulkanFBOTexture* getSeparateRTTTexture() const
                                               { return m_separate_rtt_texture; }
-        void handleDeletedTextures();
+        virtual void handleDeletedTextures();
         void addRTTPolyCount(unsigned count)       { m_rtt_polycount += count; }
         virtual SDL_Window* getSDLWindow() const
                                                { return m_params.m_sdl_window; }

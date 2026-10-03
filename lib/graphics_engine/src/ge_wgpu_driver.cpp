@@ -4,6 +4,7 @@
 
 #include "ge_main.hpp"
 #include "ge_material_manager.hpp"
+#include "ge_spm_buffer.hpp"
 #include "ge_wgpu_2d_renderer.hpp"
 #include "ge_wgpu_shader_manager.hpp"
 #include "ge_wgpu_texture.hpp"
@@ -29,6 +30,13 @@ GEWGPUDriver* getWGPUDriver()
 {
     return static_cast<GEWGPUDriver*>(getDriver());
 }   // getWGPUDriver
+
+// ----------------------------------------------------------------------------
+irr::scene::IMeshBuffer* createDynamicSPMBuffer()
+{
+    // CPU-side only until WebGPU mesh buffers exist
+    return new GESPMBuffer();
+}   // createDynamicSPMBuffer
 
 // ----------------------------------------------------------------------------
 GEWGPUDriver::GEWGPUDriver(const SIrrlichtCreationParameters& params,

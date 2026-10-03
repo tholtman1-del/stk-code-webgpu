@@ -667,7 +667,7 @@ cleanup:
     free(quest);
     dns_so_close(so);
     dns_resconf_close(conf);
-#else
+#elif !defined(__EMSCRIPTEN__)  // no DNS queries from a browser
 #define SRV_WEIGHT (RRFIXEDSZ+2)
 #define SRV_PORT (RRFIXEDSZ+4)
 #define SRV_SERVER (RRFIXEDSZ+6)

@@ -45,6 +45,9 @@ public:
     // ------------------------------------------------------------------------
     virtual void setDisableWaitIdle(bool val) = 0;
     // ------------------------------------------------------------------------
+    /** Releases GPU resources of textures that were deleted or reloaded. */
+    virtual void handleDeletedTextures() = 0;
+    // ------------------------------------------------------------------------
     virtual SDL_Window* getSDLWindow() const = 0;
     // ------------------------------------------------------------------------
     /** Selects the sampler (anisotropy level) used for mesh textures. */

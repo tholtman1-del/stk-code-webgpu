@@ -29,15 +29,14 @@ set(STK_WEB_PORTS
     -sUSE_SDL=2 -sUSE_ZLIB=1 -sUSE_LIBPNG=1 -sUSE_LIBJPEG=1
     -sUSE_FREETYPE=1 -sUSE_HARFBUZZ=1 -sUSE_OGG=1 -sUSE_VORBIS=1)
 string(REPLACE ";" " " STK_WEB_PORTS_STR "${STK_WEB_PORTS}")
-set(STK_WEB_CFLAGS "-pthread -msimd128 -fwasm-exceptions ${STK_WEB_PORTS_STR} --use-port=emdawnwebgpu")
+set(STK_WEB_CFLAGS "-pthread -msimd128 -fwasm-exceptions ${STK_WEB_PORTS_STR}")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${STK_WEB_CFLAGS}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${STK_WEB_CFLAGS}")
+# emdawnwebgpu refuses to link C programs, which would fail every C
+# try_compile (feature checks), so only C++ gets it
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${STK_WEB_CFLAGS} --use-port=emdawnwebgpu")
 
-# FindThreads and find_library(pthread) do not detect Emscripten's -pthread
-set(CMAKE_THREAD_LIBS_INIT "-pthread")
-set(CMAKE_HAVE_THREADS_LIBRARY 1)
-set(CMAKE_USE_PTHREADS_INIT 1)
-set(Threads_FOUND TRUE)
+
+# Threads come from -pthread, there is no separate pthread library to find
 set(PTHREAD_LIBRARY "-pthread" CACHE STRING "" FORCE)
 
 # Point the find_* calls at the ports. The "library" is the port flag, which

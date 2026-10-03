@@ -253,6 +253,9 @@ public:
     // ------------------------------------------------------------------------
     virtual void setDisableWaitIdle(bool val)                               {}
     // ------------------------------------------------------------------------
+    /** Textures drop their cached bind groups when destroyed or reloaded. */
+    virtual void handleDeletedTextures()                                    {}
+    // ------------------------------------------------------------------------
     virtual SDL_Window* getSDLWindow() const   { return m_params.m_sdl_window; }
     // ------------------------------------------------------------------------
     virtual void setMeshSamplerUse(GEVulkanSampler sampler)

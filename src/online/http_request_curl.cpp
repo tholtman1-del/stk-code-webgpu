@@ -1,4 +1,4 @@
-#ifndef APPLE_NETWORK_LIBRARIES
+#if !defined(APPLE_NETWORK_LIBRARIES) && !defined(__EMSCRIPTEN__)
 
 #ifdef WIN32
 #  define WIN32_LEAN_AND_MEAN
