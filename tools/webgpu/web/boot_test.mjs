@@ -5,6 +5,7 @@
 //   node tools/webgpu/web/boot_test.mjs [URL] [WAIT_MS] [SCREENSHOT] [STEPS_JSON]
 // STEPS_JSON runs after the wait, e.g. to click through the first-run screens:
 //   '[{"click":[457,540]},{"wait":2000},{"key":"Enter"},{"type":"text"},{"shot":"b.png"}]'
+// {"down":"ArrowUp"} / {"up":"ArrowUp"} hold and release a key.
 //
 // Needs Playwright (global npm module) and its Chromium. ANGLE/SwiftShader GL
 // is required for the compositor: without it Chromium cannot create the
@@ -59,6 +60,8 @@ console.log(`${t()} [shot] ${shot}`);
 for (const step of steps) {
   if (step.click) await page.mouse.click(step.click[0], step.click[1]);
   if (step.key) await page.keyboard.press(step.key);
+  if (step.down) await page.keyboard.down(step.down);
+  if (step.up) await page.keyboard.up(step.up);
   if (step.type) await page.keyboard.type(step.type, { delay: 50 });
   if (step.wait) await page.waitForTimeout(step.wait);
   if (step.shot) {
