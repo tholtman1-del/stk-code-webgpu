@@ -237,6 +237,14 @@ public:
     virtual void disableScissorTest()        { m_clip = getFullscreenClip(); }
     // ------------------------------------------------------------------------
     virtual const core::dimension2d<u32>& getCurrentRenderTargetSize() const;
+    // ------------------------------------------------------------------------
+    /** GEConfig::m_render_scale when drawing the scene on screen, 1 for
+     *  render to texture. */
+    float getRenderScale() const;
+    // ------------------------------------------------------------------------
+    /** Size the 3D scene is rendered at: the render target texture, or the
+     *  screen size times the render scale. */
+    core::dimension2du getSceneSize() const;
     // GEDriver interface
     // ------------------------------------------------------------------------
     virtual void updateDriver(bool scale_changed = true,
@@ -353,6 +361,13 @@ private:
     // ------------------------------------------------------------------------
     const wgpu::TextureView& getDepthView(const core::dimension2du& size);
     // ------------------------------------------------------------------------
+    /** Color target of the scene when the render scale is not 1. */
+    const wgpu::TextureView& getSceneView(const core::dimension2du& size);
+    // ------------------------------------------------------------------------
+    /** Draws the scaled scene to the whole output with bilinear filtering. */
+    void upscaleScene(wgpu::CommandEncoder& encoder,
+                      const wgpu::TextureView& output);
+    // ------------------------------------------------------------------------
     void renderDeferred(wgpu::CommandEncoder& encoder,
                         const std::vector<GEWGPUDrawCall*>& draw_calls,
                         const wgpu::TextureView& output);
@@ -383,6 +398,10 @@ private:
     std::unique_ptr<GEWGPUDeferredFBO> m_deferred_fbo;
     wgpu::Texture m_depth_texture;
     wgpu::TextureView m_depth_view;
+    wgpu::Texture m_scene_texture;
+    wgpu::TextureView m_scene_view;
+    wgpu::RenderPipeline m_upscale_pipeline;
+    wgpu::BindGroup m_upscale_bind_group;
 
     struct PendingTask
     {

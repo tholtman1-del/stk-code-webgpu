@@ -47,12 +47,16 @@ void GEWGPUCameraSceneNode::render()
     m_ubo_data.m_projection_view_matrix.getInverse(
         m_ubo_data.m_inverse_projection_view_matrix);
 
-    m_ubo_data.m_viewport.UpperLeftCorner.X = m_viewport.UpperLeftCorner.X;
-    m_ubo_data.m_viewport.UpperLeftCorner.Y = m_viewport.UpperLeftCorner.Y;
-    m_ubo_data.m_viewport.LowerRightCorner.X = m_viewport.getWidth();
-    m_ubo_data.m_viewport.LowerRightCorner.Y = m_viewport.getHeight();
-    const irr::core::dimension2du& size =
-        getWGPUDriver()->getCurrentRenderTargetSize();
+    // In the scaled scene target with a render scale, as
+    // GEVulkanCameraSceneNode
+    const float scale = getWGPUDriver()->getRenderScale();
+    m_ubo_data.m_viewport.UpperLeftCorner.X = m_viewport.UpperLeftCorner.X *
+        scale;
+    m_ubo_data.m_viewport.UpperLeftCorner.Y = m_viewport.UpperLeftCorner.Y *
+        scale;
+    m_ubo_data.m_viewport.LowerRightCorner.X = m_viewport.getWidth() * scale;
+    m_ubo_data.m_viewport.LowerRightCorner.Y = m_viewport.getHeight() * scale;
+    const irr::core::dimension2du size = getWGPUDriver()->getSceneSize();
     m_ubo_data.m_screensize.UpperLeftCorner.X = size.Width;
     m_ubo_data.m_screensize.UpperLeftCorner.Y = size.Height;
     m_ubo_data.m_screensize.LowerRightCorner.X = 0.0f;

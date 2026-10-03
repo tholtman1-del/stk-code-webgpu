@@ -122,6 +122,10 @@ Cloud session notes:
   getters wait for decoding, `getView()` uploads on demand. Hacienda race
   start 9.5 s -> 5.5 s under SwiftShader.
 - Optional BC3 texture compression (see Next).
+- Render resolution (video options slider, `--rtt-scale=50`): the 3D scene
+  is drawn to a smaller target (also the deferred FBO) and upscaled
+  bilinearly before the GUI, which stays at full resolution. Useful with
+  HiDPI, which renders devicePixelRatio² as many pixels.
 - Browser logs go to `console.log/warn/error` without terminal colour codes.
   Exceptions in a frame are caught like `main()` does and stop the game;
   the page shows `Module.onGameStopped` (also after quitting).
@@ -136,9 +140,7 @@ Cloud session notes:
    works but is off by default in the browser (`enable_texture_compression`):
    it slows loading (hacienda start 5.5 s -> 8.9 s) and makes packed PBR
    maps look washed out. BC7 (bc7enc is Vulkan-only in CMake) or
-   compressing offline in `package_data.py` would fix both. HiDPI
-   renders devicePixelRatio² as many pixels; GE's render scale
-   (`m_render_scale`) is not used by the WebGPU driver yet.
+   compressing offline in `package_data.py` would fix both.
    Streaming: one request per file while a track loads (could be bundled
    per track), streamed files stay in memory once read.
    The depth prepass could be skipped on tiled GPUs (Apple, mobile) if the

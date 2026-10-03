@@ -963,8 +963,12 @@ bool GEWGPUDrawCall::beginRendering(wgpu::RenderPassEncoder& pass)
     if (!m_camera || !m_data_bind_group)
         return false;
     GEWGPUDriver* driver = getWGPUDriver();
-    const irr::core::dimension2du& size = driver->getCurrentRenderTargetSize();
-    irr::core::recti vp = m_camera->getViewPort();
+    const irr::core::dimension2du size = driver->getSceneSize();
+    // Scaled like the viewport in the camera UBO
+    const irr::core::rectf& ubo_vp = m_camera->getUBOData()->m_viewport;
+    irr::core::recti vp(ubo_vp.UpperLeftCorner.X, ubo_vp.UpperLeftCorner.Y,
+        ubo_vp.UpperLeftCorner.X + ubo_vp.LowerRightCorner.X,
+        ubo_vp.UpperLeftCorner.Y + ubo_vp.LowerRightCorner.Y);
     vp.clipAgainst(irr::core::recti(0, 0, size.Width, size.Height));
     if (vp.getWidth() <= 0 || vp.getHeight() <= 0)
         return false;

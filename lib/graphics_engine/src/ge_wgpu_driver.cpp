@@ -369,6 +369,12 @@ bool GEWGPUDriver::endScene()
                 draw_calls.push_back(p.second.get());
         }
     }
+    // With a render scale the scene goes to a smaller target first
+    const core::dimension2du scene_size = getSceneSize();
+    const bool scaled = !draw_calls.empty() && scene_size != ScreenSize;
+    const wgpu::TextureView surface_view = color.view;
+    if (scaled)
+        color.view = getSceneView(scene_size);
     if (!draw_calls.empty() && draw_calls[0]->isDeferred())
     {
         for (GEWGPUDrawCall* dc : draw_calls)
@@ -386,7 +392,7 @@ bool GEWGPUDriver::endScene()
         for (GEWGPUDrawCall* dc : draw_calls)
             dc->upload();
         wgpu::RenderPassDepthStencilAttachment depth;
-        depth.view = getDepthView(ScreenSize);
+        depth.view = getDepthView(scene_size);
         depth.depthLoadOp = wgpu::LoadOp::Clear;
         depth.depthStoreOp = wgpu::StoreOp::Discard;
         depth.depthClearValue = 1.0f;
@@ -401,6 +407,11 @@ bool GEWGPUDriver::endScene()
         pass.End();
         color.loadOp = wgpu::LoadOp::Load;
         pass_desc.depthStencilAttachment = NULL;
+    }
+    if (scaled)
+    {
+        color.view = surface_view;
+        upscaleScene(encoder, surface_view);
     }
 
     wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&pass_desc);
@@ -496,9 +507,10 @@ void GEWGPUDriver::renderDeferred(wgpu::CommandEncoder& encoder,
 {
     const bool ssr =
         getGEConfig()->m_screen_space_reflection_type != GSSRT_DISABLED;
-    if (!m_deferred_fbo || m_deferred_fbo->getSize() != ScreenSize ||
+    const core::dimension2du size = getSceneSize();
+    if (!m_deferred_fbo || m_deferred_fbo->getSize() != size ||
         m_deferred_fbo->hasSSR() != ssr)
-        m_deferred_fbo.reset(new GEWGPUDeferredFBO(ScreenSize, ssr));
+        m_deferred_fbo.reset(new GEWGPUDeferredFBO(size, ssr));
     GEWGPUDeferredFBO* dfbo = m_deferred_fbo.get();
 
     auto color = [](const wgpu::TextureView& view, wgpu::LoadOp load_op)
@@ -591,6 +603,123 @@ void GEWGPUDriver::renderDeferred(wgpu::CommandEncoder& encoder,
         dc->renderDisplaceColor(pass, dfbo, m_surface_format);
     pass.End();
 }   // renderDeferred
+
+// ----------------------------------------------------------------------------
+float GEWGPUDriver::getRenderScale() const
+{
+    if (m_rtt_texture)
+        return 1.0f;
+    return core::clamp(getGEConfig()->m_render_scale, 0.1f, 1.0f);
+}   // getRenderScale
+
+// ----------------------------------------------------------------------------
+core::dimension2du GEWGPUDriver::getSceneSize() const
+{
+    if (m_rtt_texture)
+        return m_rtt_texture->getSize();
+    const float scale = getRenderScale();
+    if (scale == 1.0f)
+        return ScreenSize;
+    return core::dimension2du(
+        std::max(1u, (u32)(ScreenSize.Width * scale)),
+        std::max(1u, (u32)(ScreenSize.Height * scale)));
+}   // getSceneSize
+
+// ----------------------------------------------------------------------------
+const wgpu::TextureView& GEWGPUDriver::getSceneView(
+                                               const core::dimension2du& size)
+{
+    if (!m_scene_texture || m_scene_texture.GetWidth() != size.Width ||
+        m_scene_texture.GetHeight() != size.Height)
+    {
+        wgpu::TextureDescriptor desc;
+        desc.label = "scaled scene";
+        desc.size = { size.Width, size.Height, 1 };
+        desc.format = m_surface_format;
+        desc.usage = wgpu::TextureUsage::RenderAttachment |
+            wgpu::TextureUsage::TextureBinding;
+        m_scene_texture = m_device.CreateTexture(&desc);
+        m_scene_view = m_scene_texture.CreateView();
+        m_upscale_bind_group = nullptr;
+    }
+    return m_scene_view;
+}   // getSceneView
+
+// ----------------------------------------------------------------------------
+void GEWGPUDriver::upscaleScene(wgpu::CommandEncoder& encoder,
+                                const wgpu::TextureView& output)
+{
+    if (!m_upscale_pipeline)
+    {
+        // Not converted from GLSL like the other shaders, it is only this
+        static const char* wgsl = R"(
+@group(0) @binding(0) var scene: texture_2d<f32>;
+@group(0) @binding(1) var scene_sampler: sampler;
+struct VertexOutput {
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+};
+@vertex fn vs(@builtin(vertex_index) i: u32) -> VertexOutput {
+    let uv = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
+    var out: VertexOutput;
+    out.position = vec4f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0.0, 1.0);
+    out.uv = uv;
+    return out;
+}
+@fragment fn fs(in: VertexOutput) -> @location(0) vec4f {
+    return textureSample(scene, scene_sampler, in.uv);
+}
+)";
+        wgpu::ShaderSourceWGSL source;
+        source.code = wgsl;
+        wgpu::ShaderModuleDescriptor module_desc;
+        module_desc.nextInChain = &source;
+        module_desc.label = "upscale";
+        wgpu::ShaderModule module = m_device.CreateShaderModule(&module_desc);
+        wgpu::ColorTargetState target;
+        target.format = m_surface_format;
+        wgpu::FragmentState fragment;
+        fragment.module = module;
+        fragment.entryPoint = "fs";
+        fragment.targetCount = 1;
+        fragment.targets = &target;
+        wgpu::RenderPipelineDescriptor desc;
+        desc.label = "upscale";
+        desc.vertex.module = module;
+        desc.vertex.entryPoint = "vs";
+        desc.fragment = &fragment;
+        m_upscale_pipeline = m_device.CreateRenderPipeline(&desc);
+    }
+    if (!m_upscale_bind_group)
+    {
+        wgpu::SamplerDescriptor sampler_desc;
+        sampler_desc.magFilter = wgpu::FilterMode::Linear;
+        sampler_desc.minFilter = wgpu::FilterMode::Linear;
+        std::array<wgpu::BindGroupEntry, 2> entries = {};
+        entries[0].binding = 0;
+        entries[0].textureView = m_scene_view;
+        entries[1].binding = 1;
+        entries[1].sampler = m_device.CreateSampler(&sampler_desc);
+        wgpu::BindGroupDescriptor desc;
+        desc.layout = m_upscale_pipeline.GetBindGroupLayout(0);
+        desc.entryCount = entries.size();
+        desc.entries = entries.data();
+        m_upscale_bind_group = m_device.CreateBindGroup(&desc);
+    }
+    wgpu::RenderPassColorAttachment color;
+    color.view = output;
+    color.loadOp = wgpu::LoadOp::Clear;
+    color.storeOp = wgpu::StoreOp::Store;
+    color.clearValue = { 0.0, 0.0, 0.0, 1.0 };
+    wgpu::RenderPassDescriptor pass_desc;
+    pass_desc.colorAttachmentCount = 1;
+    pass_desc.colorAttachments = &color;
+    wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&pass_desc);
+    pass.SetPipeline(m_upscale_pipeline);
+    pass.SetBindGroup(0, m_upscale_bind_group);
+    pass.Draw(3);
+    pass.End();
+}   // upscaleScene
 
 // ----------------------------------------------------------------------------
 const wgpu::TextureView& GEWGPUDriver::getDepthView(
