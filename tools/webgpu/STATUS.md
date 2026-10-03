@@ -80,13 +80,27 @@ Cloud session notes:
   engine and unpacks into MEMFS at `/stk` before `main()`.
 - Boots to the main menu (2D GUI on WebGPU, mouse input, first-run
   dialogs, player creation, config saved to IDBFS).
+- 3D without PBR: `GEWGPUSceneManager`, `GEWGPUCameraSceneNode`,
+  `GEWGPUMeshCache` (all SPM meshes in one buffer, base vertex draws),
+  `GEWGPUDrawCall` (culling, instancing with per instance data in a storage
+  buffer, skinning, one bind group per material texture set, solid / ghost /
+  transparent passes), dynamic mesh buffers (skid marks, shadows), billboards,
+  particles and the skybox. Races render (tested on hacienda).
+  `ObjectData` and `GECullingTool` are shared with the Vulkan renderer.
+- Shader conversion: normals and tangents (A2B10G10R10 snorm, no WebGPU
+  vertex format) are read as u32 and unpacked in WGSL; push constants become
+  a uniform at `@group(1) @binding(4)` with a dynamic offset.
 
 ## Next
 
-1. 3D: mesh buffers (`GESPMBuffer`, `createDynamicSPMBuffer()` is CPU-only),
-   a WebGPU GE scene manager, draw calls, render targets, then deferred PBR,
-   skybox, IBL, shadows
-2. Performance: async texture decoding, compressed textures, asset streaming
+1. Render to texture (`setRenderTarget`, `addRenderTargetTexture`): race
+   minimap, kart models in the kart selection screen
+2. PBR: deferred lighting (light handler, deferred FBO), IBL (environment
+   maps, compute shaders), displace. `getGEConfig()->m_pbr` is forced off in
+   `GEWGPUDriver::beginScene()`. Specialization constants are frozen to
+   their defaults by compile_shaders.py, so PBR needs WGSL variants (or
+   override constants) for deferred / IBL / skybox
+3. Performance: async texture decoding, compressed textures, asset streaming
    (the whole 762 MB package is downloaded and held in memory), HiDPI
-3. Smaller issues: STK's log colour codes show up in the browser console;
+4. Smaller issues: STK's log colour codes show up in the browser console;
    C++ exceptions inside a frame are not caught (`MainLoop::runFrame()`)
