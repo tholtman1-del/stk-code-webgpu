@@ -6,7 +6,7 @@ Usage:
 
 Run after building supertuxkart and package_data.py. The output holds the
 page (index.html, coi-sw.js), the engine (supertuxkart.js/.wasm), the core
-data parts and stk-files/ (hard links where possible), plus:
+data parts, stk-files/ and stk-bundles/ (hard links where possible), plus:
 - _headers: COOP/COEP and cache headers for Netlify and Cloudflare Pages
 - .nojekyll: serve the files as they are on GitHub Pages
 Hosts that ignore _headers (GitHub Pages) get the COOP/COEP headers from the
@@ -27,6 +27,9 @@ HEADERS = """/*
   Cross-Origin-Resource-Policy: same-origin
 
 /stk-files/*
+  Cache-Control: public, max-age=604800
+
+/stk-bundles/*
   Cache-Control: public, max-age=604800
 """
 
@@ -63,6 +66,7 @@ def main():
             rel = os.path.relpath(src, args.build)
             # Only what the page loads (no worker or map leftovers)
             if not (rel.startswith("stk-files" + os.sep) or
+                    rel.startswith("stk-bundles" + os.sep) or
                     name in needed or (name.startswith("stk-data.") and
                     name.endswith(".bin"))):
                 continue

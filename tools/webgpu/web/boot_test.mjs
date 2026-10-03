@@ -7,6 +7,8 @@
 //   '[{"click":[457,540]},{"wait":2000},{"key":"Enter"},{"type":"text"},{"shot":"b.png"}]'
 // {"down":"ArrowUp"} / {"up":"ArrowUp"} hold and release a key.
 // DPR=2 in the environment emulates a HiDPI display (clicks stay in CSS px).
+// GAMEPAD=1 adds a fake standard gamepad (connected after 3 s);
+// {"pad":[button, 0|1]} and {"axis":[index, value]} change its state.
 //
 // Needs Playwright (global npm module) and its Chromium. ANGLE/SwiftShader GL
 // is required for the compositor: without it Chromium cannot create the
@@ -40,6 +42,25 @@ page.on('console', (m) => console.log(`${t()} [${m.type()}] ${clean(m.text())}`)
 page.on('pageerror', (e) => console.log(`${t()} [pageerror] ${e.stack || e.message}`));
 page.on('crash', () => console.log(`${t()} [crash]`));
 
+if (process.env.GAMEPAD) {
+  // navigator.getGamepads() is what SDL's Emscripten joystick driver polls
+  await page.addInitScript(() => {
+    const pad = {
+      id: 'Fake Gamepad (STANDARD GAMEPAD)', index: 0, connected: true,
+      mapping: 'standard', timestamp: performance.now(), axes: [0, 0, 0, 0],
+      buttons: Array.from({ length: 17 },
+        () => ({ pressed: false, touched: false, value: 0 })),
+    };
+    window.__fakePad = pad;
+    navigator.getGamepads = () => [pad, null, null, null];
+    setTimeout(() => {
+      const event = new Event('gamepadconnected');
+      event.gamepad = pad;
+      window.dispatchEvent(event);
+    }, 3000);
+  });
+}
+
 await page.goto(url);
 const deadline = Date.now() + waitMs;
 let lastStatus = '';
@@ -66,6 +87,20 @@ for (const step of steps) {
   if (step.up) await page.keyboard.up(step.up);
   if (step.type) await page.keyboard.type(step.type, { delay: 50 });
   if (step.wait) await page.waitForTimeout(step.wait);
+  if (step.pad) {
+    await page.evaluate(([b, v]) => {
+      const pad = window.__fakePad;
+      pad.buttons[b] = { pressed: !!v, touched: !!v, value: v };
+      pad.timestamp = performance.now();
+    }, step.pad);
+  }
+  if (step.axis) {
+    await page.evaluate(([a, v]) => {
+      const pad = window.__fakePad;
+      pad.axes[a] = v;
+      pad.timestamp = performance.now();
+    }, step.axis);
+  }
   if (step.shot) {
     await page.screenshot({ path: step.shot });
     console.log(`${t()} [shot] ${step.shot}`);

@@ -97,6 +97,11 @@ Cloud session notes:
   synchronous XHR when the game first reads them (a hacienda race streams
   85 files, 18 MB). After asset changes, refresh `core_files.txt` with
   `update_core_list.py` (see the script). `--no-streaming` makes one blob.
+- Track bundles: `stk-bundles/TRACK.N.bin` hold a track's streamed files
+  plus the shared files it read when recorded (`record_track_deps.py` ->
+  `track_deps.json`); the first streamed read of a track fetches its
+  bundle, so a track loads with a few requests instead of ~90 (`?nobundles`
+  turns them off). Shared files are duplicated per bundle.
 - Boots to the main menu (2D GUI on WebGPU, mouse input, first-run
   dialogs, player creation, config saved to IDBFS).
 - 3D without PBR: `GEWGPUSceneManager`, `GEWGPUCameraSceneNode`,
@@ -153,5 +158,4 @@ Cloud session notes:
    it slows loading (hacienda start 5.5 s -> 8.9 s) and makes packed PBR
    maps look washed out. BC7 (bc7enc is Vulkan-only in CMake) or
    compressing offline in `package_data.py` would fix both.
-   Streaming: one request per file while a track loads (could be bundled
-   per track). Streamed files are dropped from memory when closed.
+   Streamed files are dropped from memory when closed.

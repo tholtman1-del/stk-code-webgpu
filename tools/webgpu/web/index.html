@@ -357,6 +357,7 @@ async function mountGameData(mod) {
     // canOwn: the file keeps a view into the blob instead of a copy
     FS.writeFile(full, blob.subarray(offset, offset + size), { canOwn: true });
   }
+  if (USE_BUNDLES) trackBundles = manifest.bundles || {};
   for (const [path, size] of manifest.lazy || []) {
     const full = `${DATA_ROOT}/${path}`;
     const dir = full.substring(0, full.lastIndexOf('/'));
@@ -365,7 +366,7 @@ async function mountGameData(mod) {
       dirs.add(dir);
     }
     const url = manifest.lazyBase + path.split('/').map(encodeURIComponent).join('/');
-    createStreamedFile(FS, full, size, url);
+    streamedFiles.set(path, createStreamedFile(FS, path, full, size, url));
   }
 }
 
@@ -378,6 +379,48 @@ async function mountGameData(mod) {
 // the file is closed (textures and models are read once), a later read
 // fetches them again, normally from the HTTP cache.
 const streamStats = window.stkStreamStats = { files: 0, bytes: 0, ms: 0 };
+
+// Track bundles (package_data.py): the first streamed file read of a track
+// fetches the bundle with the track's files and the shared files it uses.
+// ?nobundles fetches single files only (record_track_deps.py needs that).
+const USE_BUNDLES = !new URLSearchParams(location.search).has('nobundles');
+let trackBundles = {};
+const fetchedBundles = new Set();
+// Package path (assets/...) -> streamed file, see createStreamedFile
+const streamedFiles = new Map();
+
+function loadTrackBundle(path) {
+  const parts = path.split('/');
+  if (parts[0] !== 'assets' || parts[1] !== 'tracks') return;
+  const track = parts[2];
+  const bundle = trackBundles[track];
+  if (!bundle || fetchedBundles.has(track)) return;
+  fetchedBundles.add(track);
+  const t0 = performance.now();
+  let data;
+  try {
+    data = bundle.parts.map((part) => fetchSync(part));
+  } catch (e) {
+    // The single files are still there
+    console.warn(`Track bundle ${track} failed:`, e);
+    return;
+  }
+  let bytes = 0;
+  for (const [file, part, offset, size] of bundle.files) {
+    const streamed = streamedFiles.get(file);
+    if (streamed && !streamed.isLoaded()) {
+      // A copy, so the bundle can be freed
+      streamed.fill(data[part].slice(offset, offset + size));
+      bytes += size;
+    }
+  }
+  const ms = performance.now() - t0;
+  streamStats.files++;
+  streamStats.bytes += bytes;
+  streamStats.ms += ms;
+  console.debug(`Streamed bundle ${track} (${bundle.files.length} files, ` +
+    `${(bytes / 1048576).toFixed(1)} MB, ${ms.toFixed(0)} ms)`);
+}
 
 function fetchSync(url) {
   const xhr = new XMLHttpRequest();
@@ -395,7 +438,7 @@ function fetchSync(url) {
   return data;
 }
 
-function createStreamedFile(FS, path, size, url) {
+function createStreamedFile(FS, packagePath, path, size, url) {
   const slash = path.lastIndexOf('/');
   const node = FS.createFile(path.substring(0, slash), path.substring(slash + 1),
     {}, true, false);
@@ -403,7 +446,14 @@ function createStreamedFile(FS, path, size, url) {
   node.usedBytes = size;
   let loaded = false;
   let openStreams = 0;
+  const fill = (data) => {
+    node.contents = data;
+    node.usedBytes = data.length;
+    loaded = true;
+  };
   const load = () => {
+    if (loaded) return;
+    loadTrackBundle(packagePath);
     if (loaded) return;
     const t0 = performance.now();
     let data;
@@ -413,9 +463,7 @@ function createStreamedFile(FS, path, size, url) {
       console.error(`Streaming ${path} failed:`, e);
       throw new FS.ErrnoError(29 /* EIO */);
     }
-    node.contents = data;
-    node.usedBytes = data.length;
-    loaded = true;
+    fill(data);
     const ms = performance.now() - t0;
     streamStats.files++;
     streamStats.bytes += data.length;
@@ -450,6 +498,7 @@ function createStreamedFile(FS, path, size, url) {
       return ops.mmap(stream, length, position, prot, flags);
     },
   };
+  return { fill, isLoaded: () => loaded };
 }
 
 // Runs a promise-returning step as a run dependency, so the runtime (and
