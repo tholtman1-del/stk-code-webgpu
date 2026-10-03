@@ -151,6 +151,32 @@ canvas.addEventListener('pointerdown', () => canvas.focus());
 
 // ---------------------------------------------------------------------------
 // Environment checks
+
+// Hosts that cannot send the COOP/COEP headers get them from a service worker
+// (coi-sw.js). Registering it needs a reload before the page is isolated;
+// the session flag stops a reload loop when that does not help.
+const COI_RELOAD_FLAG = 'stk-coi-reload';
+
+async function ensureCrossOriginIsolation() {
+  if (window.crossOriginIsolated) {
+    try { sessionStorage.removeItem(COI_RELOAD_FLAG); } catch (e) {}
+    return;
+  }
+  if (!window.isSecureContext || !('serviceWorker' in navigator)) return;
+  try {
+    if (sessionStorage.getItem(COI_RELOAD_FLAG)) return;
+    setStatus('Preparing the page…');
+    await navigator.serviceWorker.register('coi-sw.js');
+    await navigator.serviceWorker.ready;
+    sessionStorage.setItem(COI_RELOAD_FLAG, '1');
+  } catch (e) {
+    console.warn('Service worker for cross-origin isolation failed:', e);
+    return;
+  }
+  location.reload();
+  await new Promise(() => {});  // the reload replaces the page
+}
+
 function checkEnvironment() {
   if (!window.isSecureContext) {
     showError('Insecure context',
@@ -162,7 +188,8 @@ function checkEnvironment() {
     showError('Page is not cross-origin isolated',
       'The game uses threads, which need <code>SharedArrayBuffer</code>. ' +
       'The server must send <code>Cross-Origin-Opener-Policy: same-origin</code> ' +
-      'and <code>Cross-Origin-Embedder-Policy: require-corp</code>. For local ' +
+      'and <code>Cross-Origin-Embedder-Policy: require-corp</code>, or the ' +
+      'browser must allow the service worker <code>coi-sw.js</code>. For local ' +
       'testing use <code>tools/webgpu/web/serve.py</code>.');
     return false;
   }
@@ -277,34 +304,41 @@ function instantiateWithProgress(imports, onInstance) {
 // ---------------------------------------------------------------------------
 // File system
 
-// Game data, packed by tools/webgpu/package_data.py into stk-data.bin and a
-// manifest of [path, offset, size]. The download starts before the engine's
+// Game data, packed by tools/webgpu/package_data.py into stk-data.N.bin and
+// a manifest (stk-data.json) of [path, offset, size] and streamed files. The download starts before the engine's
 // and runs in parallel with it; mountGameData() writes the files into the
 // in-memory file system before main().
 const DATA_MANIFEST = 'stk-data.json';
-const DATA_BLOB = 'stk-data.bin';
 let gameData = null;
 
 async function downloadGameData() {
   const manifestResponse = await fetch(DATA_MANIFEST);
   if (!manifestResponse.ok) throw new Error(`${DATA_MANIFEST}: HTTP ${manifestResponse.status}`);
   const manifest = await manifestResponse.json();
-  const response = await fetch(DATA_BLOB);
-  if (!response.ok) throw new Error(`${DATA_BLOB}: HTTP ${response.status}`);
+  // The core package is split in parts (static host file size limits),
+  // downloaded in parallel into one buffer
   const blob = new Uint8Array(manifest.size);
-  const reader = response.body.getReader();
   let loaded = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (loaded + value.byteLength > blob.byteLength)
-      throw new Error(`${DATA_BLOB} is larger than ${DATA_MANIFEST} says`);
-    blob.set(value, loaded);
-    loaded += value.byteLength;
-    downloadProgress('data', loaded, manifest.size);
-  }
-  if (loaded !== blob.byteLength)
-    throw new Error(`${DATA_BLOB} is truncated (${loaded} of ${blob.byteLength} bytes)`);
+  await Promise.all(manifest.parts.map(async (part, index) => {
+    const response = await fetch(part);
+    if (!response.ok) throw new Error(`${part}: HTTP ${response.status}`);
+    const start = index * manifest.partSize;
+    const end = Math.min(start + manifest.partSize, manifest.size);
+    const reader = response.body.getReader();
+    let offset = start;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (offset + value.byteLength > end)
+        throw new Error(`${part} is larger than ${DATA_MANIFEST} says`);
+      blob.set(value, offset);
+      offset += value.byteLength;
+      loaded += value.byteLength;
+      downloadProgress('data', loaded, manifest.size);
+    }
+    if (offset !== end)
+      throw new Error(`${part} is truncated (${offset - start} of ${end - start} bytes)`);
+  }));
   return { manifest, blob };
 }
 
@@ -432,6 +466,7 @@ function preRun(mod) {
 
 // ---------------------------------------------------------------------------
 async function start() {
+  await ensureCrossOriginIsolation();
   if (!checkEnvironment()) return;
 
   setStatus('Initializing WebGPU…');

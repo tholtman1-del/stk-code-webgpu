@@ -40,6 +40,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         clean = path.split("?", 1)[0].split("#", 1)[0]
         if clean in ("/", "/index.html"):
             return INDEX
+        # Other page files next to index.html (coi-sw.js)
+        if clean.count("/") == 1 and clean != "/":
+            page_file = os.path.join(WEB_DIR, clean[1:])
+            if os.path.isfile(page_file) and not page_file.endswith(".py"):
+                return page_file
         return super().translate_path(path)
 
     def end_headers(self):

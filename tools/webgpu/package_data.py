@@ -4,9 +4,10 @@
 Usage:
     python3 tools/webgpu/package_data.py [--assets ../stk-assets] [--out build-web/stk/bin]
 
-Writes stk-data.bin (the core files concatenated) and stk-data.json (a
-manifest of [path, offset, size] core entries and [path, size] streamed
-entries) to the output directory. index.html downloads both and writes the
+Writes stk-data.N.bin (the core files concatenated, split in parts of at
+most 24 MiB for static hosts with file size limits, downloaded in parallel)
+and stk-data.json (a manifest of the parts, [path, offset, size] core entries
+and [path, size] streamed entries) to the output directory. index.html downloads both and writes the
 files into the in-memory file system before main(): data/ goes to /stk/data
 and the assets to /stk/assets.
 
@@ -44,6 +45,8 @@ CORE_ASSET_DIRS = ("assets/karts/", "assets/models/", "assets/sfx/")
 # powerups, track screenshots), see update_core_list.py
 CORE_LIST = os.path.join(ROOT, "tools", "webgpu", "core_files.txt")
 LAZY_DIR = "stk-files"
+# Cloudflare Pages allows 25 MiB per file, GitHub Pages 100 MB
+PART_SIZE = 24 * 1024 * 1024
 
 
 def is_streamed(rel, size, core_list):
@@ -83,7 +86,7 @@ def main():
     parser.add_argument("--assets", default=os.path.join(ROOT, "..", "stk-assets"))
     parser.add_argument("--out", default=os.path.join(ROOT, "build-web", "stk", "bin"))
     parser.add_argument("--no-streaming", action="store_true",
-                        help="put every file in stk-data.bin")
+                        help="put every file in the core package")
     args = parser.parse_args()
 
     sources = list(walk(os.path.join(ROOT, "data"), "data"))
@@ -105,7 +108,11 @@ def main():
     lazy = []
     offset = 0
     lazy_size = 0
-    with open(os.path.join(args.out, "stk-data.bin"), "wb") as out:
+    for old in os.listdir(args.out):
+        if old.startswith("stk-data.") and old.endswith(".bin"):
+            os.remove(os.path.join(args.out, old))
+    blob = bytearray()
+    if True:
         for src, rel in sources:
             size = os.path.getsize(src)
             if not args.no_streaming and is_streamed(rel, size, core_list):
@@ -115,14 +122,21 @@ def main():
                 continue
             with open(src, "rb") as f:
                 data = f.read()
-            out.write(data)
+            blob += data
             files.append([rel, offset, len(data)])
             offset += len(data)
+    parts = []
+    for i, start in enumerate(range(0, max(len(blob), 1), PART_SIZE)):
+        name = f"stk-data.{i}.bin"
+        with open(os.path.join(args.out, name), "wb") as out:
+            out.write(blob[start:start + PART_SIZE])
+        parts.append(name)
     with open(os.path.join(args.out, "stk-data.json"), "w") as f:
-        json.dump({"size": offset, "files": files, "lazyBase": LAZY_DIR + "/",
+        json.dump({"size": offset, "parts": parts, "partSize": PART_SIZE,
+                   "files": files, "lazyBase": LAZY_DIR + "/",
                    "lazy": lazy}, f, separators=(",", ":"))
     print(f"{len(files)} files, {offset / 1048576:.0f} MB in "
-          f"{args.out}/stk-data.bin")
+          f"{len(parts)} parts (stk-data.N.bin)")
     if lazy:
         print(f"{len(lazy)} streamed files, {lazy_size / 1048576:.0f} MB in "
               f"{lazy_root}/")

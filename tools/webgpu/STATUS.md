@@ -14,10 +14,21 @@ python3 tools/webgpu/compile_shaders.py   # GLSL -> WGSL (output is committed)
 emcmake cmake -S . -B build-web/stk -G Ninja
 cmake --build build-web/stk --target supertuxkart  # -> build-web/stk/bin
 tools/webgpu/fetch_assets.sh        # stk-assets from SVN into ../stk-assets
-python3 tools/webgpu/package_data.py      # stk-data.bin/.json into bin/
+python3 tools/webgpu/package_data.py      # stk-data.*.bin/.json, stk-files/ into bin/
 python3 tools/webgpu/web/serve.py         # http://localhost:8080/
 node tools/webgpu/web/boot_test.mjs       # headless boot + screenshot
 ```
+
+Deploying to a static host (https):
+
+```sh
+python3 tools/webgpu/make_dist.py   # -> build-web/dist, upload all of it
+```
+
+`_headers` sets COOP/COEP on Netlify and Cloudflare Pages; elsewhere (GitHub
+Pages, plain servers) the `coi-sw.js` service worker adds them after one
+reload. Every file is at most 24 MiB (the core package is split into
+`stk-data.N.bin` parts, downloaded in parallel).
 
 Cloud session notes:
 - `build_deps.sh` clones the Emscripten ports' sources with git
@@ -132,9 +143,9 @@ Cloud session notes:
 
 ## Next
 
-0. Test on real GPUs and browsers (everything so far ran on SwiftShader in
-   headless Chromium): Chrome/Edge, Safari, Firefox; split screen, story
-   mode, gamepads; hosting with COOP/COEP and caching of `stk-files/`.
+0. More testing on real GPUs and browsers (tested on the developer's Mac
+   by the user: works): Safari, Firefox, Windows/Linux GPUs; split screen,
+   story mode, gamepads; a real static host deployment.
 
 1. Texture compression: BC3 (GECompressorS3TCBC3 on the loader threads)
    works but is off by default in the browser (`enable_texture_compression`):
