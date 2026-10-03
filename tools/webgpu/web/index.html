@@ -374,7 +374,9 @@ async function mountGameData(mod) {
 // thread (other threads' calls are proxied to it) and the game reads files
 // synchronously, so this is a synchronous XHR, the only blocking fetch on
 // the main thread. Emscripten's FS.createLazyFile refuses to do that, hence
-// this version of it. The HTTP cache keeps the files for later sessions.
+// this version of it. The contents are dropped when the last open stream of
+// the file is closed (textures and models are read once), a later read
+// fetches them again, normally from the HTTP cache.
 const streamStats = window.stkStreamStats = { files: 0, bytes: 0, ms: 0 };
 
 function fetchSync(url) {
@@ -400,6 +402,7 @@ function createStreamedFile(FS, path, size, url) {
   // MEMFS reports usedBytes as the size
   node.usedBytes = size;
   let loaded = false;
+  let openStreams = 0;
   const load = () => {
     if (loaded) return;
     const t0 = performance.now();
@@ -422,6 +425,22 @@ function createStreamedFile(FS, path, size, url) {
   const ops = node.stream_ops;
   node.stream_ops = {
     ...ops,
+    open(stream) {
+      openStreams++;
+      if (ops.open) ops.open(stream);
+    },
+    dup(stream) {
+      openStreams++;
+      if (ops.dup) ops.dup(stream);
+    },
+    close(stream) {
+      if (ops.close) ops.close(stream);
+      if (--openStreams > 0) return;
+      openStreams = 0;
+      node.contents = null;
+      node.usedBytes = size;
+      loaded = false;
+    },
     read(stream, buffer, offset, length, position) {
       load();
       return ops.read(stream, buffer, offset, length, position);

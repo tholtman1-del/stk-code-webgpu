@@ -153,6 +153,6 @@ Cloud session notes:
    maps look washed out. BC7 (bc7enc is Vulkan-only in CMake) or
    compressing offline in `package_data.py` would fix both.
    Streaming: one request per file while a track loads (could be bundled
-   per track), streamed files stay in memory once read.
+   per track). Streamed files are dropped from memory when closed.
    The depth prepass could be skipped on tiled GPUs (Apple, mobile) if the
    adapter info allows telling them apart
