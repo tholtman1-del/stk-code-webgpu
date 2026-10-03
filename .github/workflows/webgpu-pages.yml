@@ -1,0 +1,95 @@
+# Builds the WebGPU browser version and publishes it on GitHub Pages as a
+# demo. Started by hand (Actions -> WebGPU demo on GitHub Pages -> Run
+# workflow) because a build from scratch takes about 40 minutes. The repository
+# settings must use "GitHub Actions" as the Pages source.
+# See tools/webgpu/STATUS.md for building and hosting it yourself.
+name: WebGPU demo on GitHub Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: webgpu-pages
+  cancel-in-progress: false
+
+env:
+  EMSDK_VERSION: 6.0.11
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      # The scripts expect ../emsdk and ../stk-assets next to the sources
+      - uses: actions/checkout@v4
+        with:
+          path: stk-code-webgpu
+
+      - name: Install packages
+        run: sudo apt-get update && sudo apt-get install -y ninja-build subversion
+
+      - name: Cache Emscripten (with its built ports)
+        uses: actions/cache@v4
+        with:
+          path: emsdk
+          key: emsdk-${{ env.EMSDK_VERSION }}-${{ hashFiles('stk-code-webgpu/tools/webgpu/fetch_ports.py', 'stk-code-webgpu/tools/webgpu/build_deps.sh') }}
+
+      - name: Cache game assets
+        uses: actions/cache@v4
+        with:
+          path: stk-assets
+          key: stk-assets-v1
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: stk-code-webgpu/build-web/deps
+          key: deps-${{ env.EMSDK_VERSION }}-${{ hashFiles('stk-code-webgpu/tools/webgpu/build_deps.sh') }}
+
+      - name: Install Emscripten
+        run: |
+          if [ ! -d emsdk ]; then
+            git clone --depth 1 https://github.com/emscripten-core/emsdk.git
+          fi
+          emsdk/emsdk install "$EMSDK_VERSION"
+          emsdk/emsdk activate "$EMSDK_VERSION"
+
+      - name: Build dependencies
+        working-directory: stk-code-webgpu
+        run: tools/webgpu/build_deps.sh
+
+      - name: Build SuperTuxKart
+        working-directory: stk-code-webgpu
+        run: |
+          source ../emsdk/emsdk_env.sh
+          emcmake cmake -S . -B build-web/stk -G Ninja
+          cmake --build build-web/stk --target supertuxkart
+
+      - name: Download game assets
+        working-directory: stk-code-webgpu
+        run: tools/webgpu/fetch_assets.sh
+
+      # Without track bundles the site fits in GitHub Pages' 1 GB limit
+      - name: Package game data
+        working-directory: stk-code-webgpu
+        run: |
+          python3 tools/webgpu/package_data.py
+          python3 tools/webgpu/make_dist.py --no-bundles
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: stk-code-webgpu/build-web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
