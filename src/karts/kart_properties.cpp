@@ -193,7 +193,7 @@ std::vector<std::string> KartProperties::handleOnDemandLoadTexture()
 {
     std::vector<std::string> odt;
 #ifndef SERVER_ONLY
-    if (GE::getDriver()->getDriverType() != video::EDT_VULKAN)
+    if (!GE::isGEDriver())
         return odt;
 
     std::set<std::string> files;
@@ -385,7 +385,7 @@ void KartProperties::load(const std::string &filename, const std::string &node)
     file_manager->popModelSearchPath();
 
 #ifndef SERVER_ONLY
-    if (GE::getDriver()->getDriverType() == video::EDT_VULKAN)
+    if (GE::isGEDriver())
     {
         for (auto& t : odt)
             GE::getGEConfig()->m_ondemand_load_texture_paths.erase(t);

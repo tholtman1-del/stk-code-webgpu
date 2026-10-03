@@ -9,6 +9,10 @@ add_definitions( -DSUPERTUXKART_VERSION="${PROJECT_VERSION}" )
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake")
 include(CMakeDependentOption)
 
+if(EMSCRIPTEN)
+    include(Emscripten)
+endif()
+
 include(BuildTypeSTKRelease)
 if(NOT CMAKE_BUILD_TYPE)
     message(STATUS "No build type selected, default to STKRelease")
@@ -53,7 +57,7 @@ if (DLOPEN_MOLTENVK)
     ADD_DEFINITIONS(-DDLOPEN_MOLTENVK)
 endif()
 
-if((UNIX AND NOT APPLE) OR NINTENDO_SWITCH)
+if((UNIX AND NOT APPLE AND NOT EMSCRIPTEN) OR NINTENDO_SWITCH)
     include(FindPkgConfig)
 endif()
 
@@ -86,7 +90,7 @@ if (IOS)
     option(USE_GLES2 "Use OpenGL ES2 renderer" ON)
 endif()
 
-if((UNIX AND NOT APPLE) AND NOT SERVER_ONLY)
+if((UNIX AND NOT APPLE AND NOT EMSCRIPTEN) AND NOT SERVER_ONLY)
     if((${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm") OR 
        (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64") OR
        (${CMAKE_SYSTEM_PROCESSOR} MATCHES "riscv64"))
@@ -204,7 +208,7 @@ if(UNIX OR MINGW)
     endif()
 endif()
 
-if(UNIX AND NOT APPLE AND NOT ${CMAKE_SYSTEM_NAME} MATCHES "SunOS")
+if(UNIX AND NOT APPLE AND NOT EMSCRIPTEN AND NOT ${CMAKE_SYSTEM_NAME} MATCHES "SunOS")
     find_package(PkgConfig REQUIRED)
 
     if(NOT PKGCONFIG_FOUND)
@@ -232,7 +236,7 @@ else()
 endif()
 
 # Find system ENet library or build it if missing
-if((UNIX AND NOT APPLE) AND USE_SYSTEM_ENET AND NOT USE_IPV6)
+if((UNIX AND NOT APPLE AND NOT EMSCRIPTEN) AND USE_SYSTEM_ENET AND NOT USE_IPV6)
     pkg_check_modules(ENET libenet>=1.3.4)
 endif()
 
@@ -442,7 +446,9 @@ if(NOT SERVER_ONLY)
     endif()
 
     # OggVorbis
-    find_package(OggVorbis REQUIRED)
+    if(NOT EMSCRIPTEN)
+        find_package(OggVorbis REQUIRED)
+    endif()
     include_directories(${OGGVORBIS_INCLUDE_DIRS})
 
     # Opus (optional)
@@ -471,7 +477,9 @@ if (NOT SERVER_ONLY)
     SET(SHEENBIDI_LIBRARY sheenbidi)
 
     # Freetype
-    find_package(Freetype)
+    if(NOT EMSCRIPTEN)
+        find_package(Freetype)
+    endif()
     if(FREETYPE_FOUND OR TARGET Freetype::Freetype)
         include_directories(${FREETYPE_INCLUDE_DIRS})
     else()
@@ -567,6 +575,9 @@ if (USE_APPLE_NETWORK_LIBRARIES)
         XCODE_ATTRIBUTE_DERIVED_FILE_DIR ${SWIFT_HEADER_DIR}
     )
     target_include_directories(cryptokit_wrapper INTERFACE ${SWIFT_HEADER_DIR})
+elseif(EMSCRIPTEN)
+    # HTTP goes through the browser fetch API
+    set(STK_SOURCES ${STK_SOURCES} src/online/http_request_fetch.cpp)
 else()
     find_package(CURL REQUIRED)
     include_directories(${CURL_INCLUDE_DIRS})
@@ -724,6 +735,8 @@ target_link_libraries(supertuxkart
 
 if (USE_APPLE_NETWORK_LIBRARIES)
     target_link_libraries(supertuxkart "-framework Foundation -framework CryptoKit" cryptokit_wrapper)
+elseif(EMSCRIPTEN)
+    stk_web_configure_target(supertuxkart)
 else()
     target_link_libraries(supertuxkart ${CURL_LIBRARIES})
 endif()

@@ -59,6 +59,9 @@ namespace video
 		//! A driver using vulkan coded by STK
 		EDT_VULKAN,
 
+		//! A driver using WebGPU (browser builds), sharing the GE renderer
+		EDT_WEBGPU,
+
 		//! No driver, just for counting the elements
 		EDT_COUNT
 	};

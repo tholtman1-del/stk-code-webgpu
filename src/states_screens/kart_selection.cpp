@@ -52,7 +52,7 @@
 
 #ifndef SERVER_ONLY
 #include <ge_main.hpp>
-#include <ge_vulkan_driver.hpp>
+#include <ge_driver.hpp>
 #endif
 
 using namespace GUIEngine;
@@ -378,7 +378,7 @@ void KartSelectionScreen::tearDown()
 {
 #ifndef SERVER_ONLY
     GE::getGEConfig()->m_enable_draw_call_cache = false;
-    GE::GEVulkanDriver* gevk = GE::getVKDriver();
+    GE::GEDriver* gevk = GE::getGEDriver();
     if (gevk)
         gevk->clearDrawCallsCache();
 #endif

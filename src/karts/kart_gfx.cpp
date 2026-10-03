@@ -38,6 +38,7 @@
 
 #include <iostream>
 #include "IVideoDriver.h"
+#include <ge_main.hpp>
 
 KartGFX::KartGFX(const AbstractKart *kart, bool is_day)
 {
@@ -631,6 +632,6 @@ bool KartGFX::supportsLight() const
     return false;
 #else
     return CVS->isGLSL() ||
-        irr_driver->getVideoDriver()->getDriverType() == video::EDT_VULKAN;
+        GE::isGEDriver();
 #endif
 }

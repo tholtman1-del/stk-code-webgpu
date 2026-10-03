@@ -26,7 +26,7 @@
 #include "guiengine/engine.hpp"
 #include <ge_main.hpp>
 #include <ge_gl_utils.hpp>
-#include <ge_vulkan_features.hpp>
+#include <ge_driver.hpp>
 
 using namespace GE;
 bool CentralVideoSettings::m_supports_sp = true;
@@ -75,11 +75,10 @@ void CentralVideoSettings::init()
             GE::getGEConfig()->m_disable_npot_texture =
                 GraphicsRestrictions::isDisabled(
                 GraphicsRestrictions::GR_NPOT_TEXTURES);
-            if (GE::getDriver()->getDriverType() == video::EDT_VULKAN)
+            if (GE::isGEDriver())
             {
-                hasTextureCompression = GEVulkanFeatures::supportsS3TCBC3() ||
-                    GEVulkanFeatures::supportsBPTCBC7() ||
-                    GEVulkanFeatures::supportsASTC4x4();
+                hasTextureCompression =
+                    GE::getGEDriver()->supportsTextureCompression();
             }
             return;
         }
@@ -502,7 +501,7 @@ bool CentralVideoSettings::isARBTextureBufferObjectUsable() const
 
 bool CentralVideoSettings::supportsColorization() const
 {
-    return isGLSL() || GE::getDriver()->getDriverType() == video::EDT_VULKAN ||
+    return isGLSL() || GE::isGEDriver() ||
         GE::getDriver()->getDriverType() == video::EDT_OGLES2;
 }
 

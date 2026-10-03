@@ -509,7 +509,7 @@ bool g_debug_print = false;
 GEVulkanDriver::GEVulkanDriver(const SIrrlichtCreationParameters& params,
                                io::IFileSystem* io, SDL_Window* window,
                                IrrlichtDevice* device)
-              : CNullDriver(io, core::dimension2d<u32>(0, 0)),
+              : GEDriver(io, core::dimension2d<u32>(0, 0)),
                 m_params(params), m_irrlicht_device(device),
                 m_depth_texture(NULL), m_skybox_renderer(NULL),
                 m_mesh_texture_descriptor(NULL), m_rtt_texture(NULL),
@@ -2842,6 +2842,20 @@ void GEVulkanDriver::clearDrawCallsCache()
 {
     m_draw_calls_cache.clear();
 }   // clearDrawCallsCache
+
+// ----------------------------------------------------------------------------
+bool GEVulkanDriver::supportsTextureCompression() const
+{
+    return GEVulkanFeatures::supportsS3TCBC3() ||
+        GEVulkanFeatures::supportsBPTCBC7() ||
+        GEVulkanFeatures::supportsASTC4x4();
+}   // supportsTextureCompression
+
+// ----------------------------------------------------------------------------
+void GEVulkanDriver::setMeshSamplerUse(GEVulkanSampler sampler)
+{
+    m_mesh_texture_descriptor->setSamplerUse(sampler);
+}   // setMeshSamplerUse
 
 // ----------------------------------------------------------------------------
 void GEVulkanDriver::addDrawCallToCache(std::unique_ptr<GEVulkanDrawCall>& dc)

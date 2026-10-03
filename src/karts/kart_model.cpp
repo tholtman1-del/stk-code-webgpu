@@ -57,6 +57,7 @@
 #include <ge_render_info.hpp>
 #include <ge_spm.hpp>
 #include <ge_spm_buffer.hpp>
+#include <ge_main.hpp>
 
 #define SKELETON_DEBUG 0
 
@@ -534,7 +535,7 @@ scene::ISceneNode* KartModel::attachModel(bool animated_models, bool human_playe
     bool supports_light = false;
 #else
     bool supports_light = (CVS->isGLSL() && CVS->isDeferredEnabled()) ||
-        irr_driver->getVideoDriver()->getDriverType() == video::EDT_VULKAN;
+        GE::isGEDriver();
 #endif
 
     // Attach the headlights
@@ -607,7 +608,7 @@ scene::ISceneNode* KartModel::attachModel(bool animated_models, bool human_playe
  */
 void HeadlightObject::setLight(scene::ISceneNode* parent)
 {
-    bool is_vk = irr_driver->getVideoDriver()->getDriverType() == video::EDT_VULKAN;
+    bool is_vk = GE::isGEDriver();
     m_node = irr_driver->addLight(core::vector3df(0.0f, 0.0f, 0.0f),
         m_energy, m_radius, m_headlight_color.getRed() / 255.f,
         m_headlight_color.getGreen() / 255.f,

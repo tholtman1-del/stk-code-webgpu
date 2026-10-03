@@ -28,8 +28,7 @@
 #include "states_screens/dialogs/custom_camera_settings.hpp"
 
 #include <ge_main.hpp>
-#include <ge_vulkan_driver.hpp>
-#include <ge_vulkan_texture_descriptor.hpp>
+#include <ge_driver.hpp>
 #include <SDL_video.h>
 #include "../../lib/irrlicht/source/Irrlicht/CIrrDeviceSDL.h"
 
@@ -118,7 +117,7 @@ void OptionsScreenDisplay::init()
 #endif
 
     bool is_vulkan_fullscreen_desktop = GE::getGEConfig()->m_fullscreen_desktop &&
-        GE::getDriver()->getDriverType() == video::EDT_VULKAN;
+        GE::isGEDriver();
 
     configResolutionsList();
 
@@ -430,7 +429,7 @@ void OptionsScreenDisplay::eventCallback(Widget* widget, const std::string& name
         CheckBoxWidget* rememberWinpos = getWidget<CheckBoxWidget>("rememberWinpos");
 
         rememberWinpos->setActive(!fullscreen->getState());
-        GE::GEVulkanDriver* gevk = GE::getVKDriver();
+        GE::GEDriver* gevk = GE::getGEDriver();
         if (gevk && GE::getGEConfig()->m_fullscreen_desktop)
         {
             UserConfigParams::m_fullscreen = fullscreen->getState();

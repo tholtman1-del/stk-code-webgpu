@@ -106,8 +106,7 @@
 
 #ifndef SERVER_ONLY
 #include <ge_main.hpp>
-#include <ge_vulkan_driver.hpp>
-#include <ge_vulkan_texture_descriptor.hpp>
+#include <ge_driver.hpp>
 #include <SDL_stdinc.h>
 #endif
 
@@ -510,6 +509,10 @@ begin:
 #endif
 
         video::E_DRIVER_TYPE driver_created = video::EDT_NULL;
+#ifdef __EMSCRIPTEN__
+        // The browser build only ships the WebGPU renderer
+        UserConfigParams::m_render_driver = "webgpu";
+#endif
         if (std::string(UserConfigParams::m_render_driver) == "opengl")
         {
 #if defined(USE_GLES2)
@@ -523,9 +526,12 @@ begin:
             driver_created = video::EDT_DIRECT3D9;
         }
         else if (std::string(UserConfigParams::m_render_driver) == "vulkan" ||
-            std::string(UserConfigParams::m_render_driver) == "directx12")
+            std::string(UserConfigParams::m_render_driver) == "directx12" ||
+            std::string(UserConfigParams::m_render_driver) == "webgpu")
         {
-            driver_created = video::EDT_VULKAN;
+            driver_created =
+                std::string(UserConfigParams::m_render_driver) == "webgpu" ?
+                video::EDT_WEBGPU : video::EDT_VULKAN;
 #if defined(WIN32) && !defined(SERVER_ONLY)
             if (std::string(UserConfigParams::m_render_driver) == "directx12")
             {
@@ -557,7 +563,7 @@ begin:
 
 #ifndef SERVER_ONLY
         GE::getGEConfig()->m_fullscreen_desktop =
-            (driver_created == video::EDT_VULKAN &&
+            (GE::isGEDriver(driver_created) &&
             UserConfigParams::m_vulkan_fullscreen_desktop) ||
             UserConfigParams::m_non_ge_fullscreen_desktop;
 #endif
@@ -620,6 +626,10 @@ begin:
             }
             */
             m_device = createDeviceEx(params);
+#ifdef __EMSCRIPTEN__
+            if (!m_device && driver_created == video::EDT_WEBGPU)
+                break;
+#endif
             if (!m_device && driver_created == video::EDT_VULKAN)
             {
                 display_msg = L"Vulkan unsupported";
@@ -671,25 +681,24 @@ begin:
 
     GE::setVideoDriver(m_device->getVideoDriver());
 
-    GE::GEVulkanDriver* vk = GE::getVKDriver();
+    GE::GEDriver* vk = GE::getGEDriver();
     if (vk)
     {
-        GE::GEVulkanTextureDescriptor* td = vk->getMeshTextureDescriptor();
         switch (UserConfigParams::m_anisotropic)
         {
         case 16:
-            td->setSamplerUse(GE::GVS_3D_MESH_MIPMAP_16);
+            vk->setMeshSamplerUse(GE::GVS_3D_MESH_MIPMAP_16);
             break;
         case 4:
-            td->setSamplerUse(GE::GVS_3D_MESH_MIPMAP_4);
+            vk->setMeshSamplerUse(GE::GVS_3D_MESH_MIPMAP_4);
             break;
         case 2:
-            td->setSamplerUse(GE::GVS_3D_MESH_MIPMAP_2);
+            vk->setMeshSamplerUse(GE::GVS_3D_MESH_MIPMAP_2);
             break;
         default:
             Log::warn("irr_driver", "Unsupported anisotropic values, revert");
             UserConfigParams::m_anisotropic = 16;
-            td->setSamplerUse(GE::GVS_3D_MESH_MIPMAP_16);
+            vk->setMeshSamplerUse(GE::GVS_3D_MESH_MIPMAP_16);
             break;
         }
     }
@@ -1431,7 +1440,7 @@ scene::ISceneNode *IrrDriver::addSphere(float radius,
 #endif
 
 #ifndef SERVER_ONLY
-    bool vk = (GE::getVKDriver() != NULL);
+    bool vk = (GE::getGEDriver() != NULL);
     if (vk)
         GE::getGEConfig()->m_convert_irrlicht_mesh = true;
 #endif
@@ -1875,7 +1884,7 @@ void IrrDriver::setAmbientLight(const video::SColorf &light, bool force_SH_compu
 {
 #ifndef SERVER_ONLY
     video::SColorf color = light;
-    if (m_video_driver->getDriverType() != EDT_VULKAN)
+    if (!GE::isGEDriver())
     {
         color.r = powf(color.r, 1.0f / 2.2f);
         color.g = powf(color.g, 1.0f / 2.2f);
@@ -2443,7 +2452,7 @@ scene::ISceneNode *IrrDriver::addLight(const core::vector3df &pos,
     else
     {
         scene::ILightSceneNode* light;
-        if (m_video_driver->getDriverType() == EDT_VULKAN && sun_)
+        if (GE::isGEDriver() && sun_)
         {
             light = m_scene_manager->addLightSceneNode(parent, pos,
                 video::SColorf(r, g, b, 0.2f), 0.26f * M_PI / 180.0f);
@@ -2455,7 +2464,7 @@ scene::ISceneNode *IrrDriver::addLight(const core::vector3df &pos,
             video::SColorf color(r, g, b, 1.0f);
             light = m_scene_manager->addLightSceneNode(parent, pos, color);
             light->setRadius(radius);
-            if (m_video_driver->getDriverType() == EDT_VULKAN)
+            if (GE::isGEDriver())
             {
                 video::SLight& data = light->getLightData();
                 data.Attenuation.X = energy;

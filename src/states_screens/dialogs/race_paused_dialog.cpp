@@ -55,7 +55,7 @@
 
 #ifndef SERVER_ONLY
 #include <ge_main.hpp>
-#include <ge_vulkan_driver.hpp>
+#include <ge_driver.hpp>
 #endif
 
 using namespace GUIEngine;
@@ -368,7 +368,7 @@ GUIEngine::EventPropagation
         }
         else if (selection == "help")
         {
-            GE::GEVulkanDriver* vk_pbr_toggle = m_vk_pbr_toggle;
+            GE::GEDriver* vk_pbr_toggle = m_vk_pbr_toggle;
             dismiss();
 #ifndef SERVER_ONLY
             if (vk_pbr_toggle)
@@ -464,7 +464,7 @@ void RacePausedDialog::beforeAddingWidgets()
         if (index != -1)
         {
 #ifndef SERVER_ONLY
-            m_vk_pbr_toggle = GE::getVKDriver();
+            m_vk_pbr_toggle = GE::getGEDriver();
             if (m_vk_pbr_toggle)
             {
                 IconButtonWidget* hw = getWidget<IconButtonWidget>("help");

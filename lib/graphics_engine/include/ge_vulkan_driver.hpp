@@ -9,7 +9,7 @@
 #include "ge_vma.hpp"
 #include "SDL_video.h"
 
-#include "../source/Irrlicht/CNullDriver.h"
+#include "ge_driver.hpp"
 #include "SIrrCreationParameters.h"
 #include "SColor.h"
 #include <array>
@@ -33,19 +33,7 @@ namespace GE
     class GEVulkanMeshCache;
     class GEVulkanSkyBoxRenderer;
     class GEVulkanTextureDescriptor;
-    enum GEVulkanSampler : unsigned
-    {
-        GVS_MIN = 0,
-        GVS_NEAREST = GVS_MIN,
-        GVS_SKYBOX,
-        GVS_3D_MESH_MIPMAP_2,
-        GVS_3D_MESH_MIPMAP_4,
-        GVS_3D_MESH_MIPMAP_16,
-        GVS_2D_RENDER,
-        GVS_SHADOW,
-        GVS_COUNT,
-    };
-    class GEVulkanDriver : public video::CNullDriver
+    class GEVulkanDriver : public GEDriver
     {
     public:
 
@@ -336,7 +324,7 @@ namespace GE
                                                { return m_pre_rotation_matrix; }
         virtual void pauseRendering();
         virtual void unpauseRendering();
-        void updateSwapInterval(int value)
+        virtual void updateSwapInterval(int value)
         {
             if (m_params.SwapInterval == value)
                 return;
@@ -344,15 +332,16 @@ namespace GE
             destroySwapChainRelated(false/*handle_surface*/);
             createSwapChainRelated(false/*handle_surface*/);
         }
-        void updateDriver(bool scale_changed = true, bool pbr_changed = false,
-                          bool ibl_changed = false);
-        void reloadShaders();
+        virtual void updateDriver(bool scale_changed = true,
+                                  bool pbr_changed = false,
+                                  bool ibl_changed = false);
+        virtual void reloadShaders();
         uint32_t getGraphicsFamily() const         { return m_graphics_family; }
         unsigned getGraphicsQueueCount() const
                                               { return m_graphics_queue_count; }
         std::unique_lock<std::mutex> getGraphicsQueue(VkQueue* queue) const;
-        void waitIdle(bool flush_command_loader = false);
-        void setDisableWaitIdle(bool val)         { m_disable_wait_idle = val; }
+        virtual void waitIdle(bool flush_command_loader = false);
+        virtual void setDisableWaitIdle(bool val) { m_disable_wait_idle = val; }
         IrrlichtDevice* getIrrlichtDevice() const  { return m_irrlicht_device; }
         GEVulkanAttachmentTexture* getDepthTexture() const
                                                      { return m_depth_texture; }
@@ -370,8 +359,12 @@ namespace GE
                                               { return m_separate_rtt_texture; }
         void handleDeletedTextures();
         void addRTTPolyCount(unsigned count)       { m_rtt_polycount += count; }
-        SDL_Window* getSDLWindow() const       { return m_params.m_sdl_window; }
-        void clearDrawCallsCache();
+        virtual SDL_Window* getSDLWindow() const
+                                               { return m_params.m_sdl_window; }
+        virtual void clearDrawCallsCache();
+        virtual void setMeshSamplerUse(GEVulkanSampler sampler);
+        virtual void destroyDriver()                         { destroyVulkan(); }
+        virtual bool supportsTextureCompression() const;
         void addDrawCallToCache(std::unique_ptr<GEVulkanDrawCall>& dc);
         std::unique_ptr<GEVulkanDrawCall> getDrawCallFromCache();
         GESPM* getBillboardQuad() const             { return m_billboard_quad; }

@@ -74,7 +74,7 @@
 #include <cmath>
 #ifndef SERVER_ONLY
 #include <ge_main.hpp>
-#include <ge_vulkan_driver.hpp>
+#include <ge_driver.hpp>
 #endif
 
 using namespace irr;
@@ -327,7 +327,7 @@ bool handleContextMenuAction(s32 cmd_id)
 #ifndef SERVER_ONLY
     {
         Log::info("Debug", "Reloading shaders...");
-        GE::GEVulkanDriver* vk = GE::getVKDriver();
+        GE::GEDriver* vk = GE::getGEDriver();
         if (vk)
             vk->reloadShaders();
         else
@@ -391,7 +391,7 @@ bool handleContextMenuAction(s32 cmd_id)
     case DEBUG_GE_PBR:
 #ifndef SERVER_ONLY
     {
-        GE::GEVulkanDriver* vk = GE::getVKDriver();
+        GE::GEDriver* vk = GE::getGEDriver();
         if (vk)
         {
             UserConfigParams::m_dynamic_lights = !UserConfigParams::m_dynamic_lights;
@@ -404,7 +404,7 @@ bool handleContextMenuAction(s32 cmd_id)
     case DEBUG_GE_IBL:
 #ifndef SERVER_ONLY
     {
-        GE::GEVulkanDriver* vk = GE::getVKDriver();
+        GE::GEDriver* vk = GE::getGEDriver();
         if (vk)
         {
             UserConfigParams::m_degraded_IBL = !UserConfigParams::m_degraded_IBL;
@@ -418,7 +418,7 @@ bool handleContextMenuAction(s32 cmd_id)
     case DEBUG_GE_SSR:
 #ifndef SERVER_ONLY
     {
-        GE::GEVulkanDriver* vk = GE::getVKDriver();
+        GE::GEDriver* vk = GE::getGEDriver();
         if (vk)
         {
             GE::getGEConfig()->m_screen_space_reflection_type =

@@ -576,7 +576,7 @@ void Material::install(std::function<void(video::IImage*)> image_mani,
     m_texture->grab();
 
 #ifndef SERVER_ONLY
-    if (irr_driver->getVideoDriver()->getDriverType() != EDT_VULKAN)
+    if (!GE::isGEDriver())
         return;
 
     for (unsigned i = 2; i < m_sampler_path.size(); i++)
@@ -635,7 +635,7 @@ void Material::unloadTexture()
     }
 
 #ifndef SERVER_ONLY
-    if (irr_driver->getVideoDriver()->getDriverType() == EDT_VULKAN)
+    if (GE::isGEDriver())
     {
         for (unsigned i = 2; i < m_sampler_path.size(); i++)
         {
@@ -837,7 +837,7 @@ void  Material::setMaterialProperties(video::SMaterial *m, scene::IMeshBuffer* m
     }
 
     m->setColorizable(m_colorizable);
-    bool is_vk = irr_driver->getVideoDriver()->getDriverType() == EDT_VULKAN;
+    bool is_vk = GE::isGEDriver();
     // Default solid
     m->MaterialType = video::EMT_SOLID;
     if (RaceManager::get()->getReverseTrack() &&

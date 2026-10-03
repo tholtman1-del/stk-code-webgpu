@@ -27,6 +27,7 @@
 #include "../../lib/irrlicht/source/Irrlicht/os.h"
 #include <ISceneManager.h>
 #include <IVideoDriver.h>
+#include <ge_main.hpp>
 
 // ----------------------------------------------------------------------------
 std::vector<float> STKParticle::m_flips_data;
@@ -536,7 +537,7 @@ void STKParticle::OnRegisterSceneNode()
         p.color.setGreen(core::clamp((int)(ret.Y * 255.0f), 0, 255));
         p.color.setBlue(core::clamp((int)(ret.Z * 255.0f), 0, 255));
         p.color.setAlpha(core::clamp((int)(alpha * 255.0f), 0, 255));
-        if (irr_driver->getVideoDriver()->getDriverType() == video::EDT_VULKAN)
+        if (GE::isGEDriver())
         {
             // Only used in ge_vulkan_draw_call.cpp
             p.startTime = i;

@@ -224,9 +224,9 @@ CIrrDeviceSDL::~CIrrDeviceSDL()
 			es2->cleanUp();
 		}
 #endif
-		GE::GEVulkanDriver* gevk = dynamic_cast<GE::GEVulkanDriver*>(VideoDriver);
+		GE::GEDriver* gevk = dynamic_cast<GE::GEDriver*>(VideoDriver);
 		if (gevk)
-			gevk->destroyVulkan();
+			gevk->destroyDriver();
 		VideoDriver->drop();
 		VideoDriver = NULL;
 	}
@@ -345,7 +345,7 @@ bool versionCorrect(int major, int minor)
 // Used in OptionsScreenVideo for live fullscreen toggle for vulkan driver
 extern "C" void update_fullscreen_desktop(int val)
 {
-	GE::GEVulkanDriver* gevk = GE::getVKDriver();
+	GE::GEDriver* gevk = GE::getGEDriver();
 	if (!gevk || !GE::getGEConfig()->m_fullscreen_desktop)
 		return;
 	SDL_Window* window = gevk->getSDLWindow();
@@ -373,7 +373,7 @@ extern "C" void update_swap_interval(int swap_interval)
 	if (swap_interval > 1)
 		swap_interval = 1;
 
-	GE::GEVulkanDriver* gevk = GE::getVKDriver();
+	GE::GEDriver* gevk = GE::getGEDriver();
 	if (gevk)
 	{
 		gevk->updateSwapInterval(swap_interval);

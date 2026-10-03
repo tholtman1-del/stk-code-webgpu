@@ -31,11 +31,12 @@
 #ifndef SERVER_ONLY
 
 #include <array>
-#include <ge_vulkan_dynamic_spm_buffer.hpp>
+#include <ge_main.hpp>
 #include <IMeshSceneNode.h>
 #include <IVideoDriver.h>
 #include <SMesh.h>
 #include <SMeshBuffer.h>
+#include <ge_main.hpp>
 
 Shadow::Shadow(Material* shadow_mat, const AbstractKart& kart)
       : m_node(NULL), m_shadow_enabled(false), m_kart(kart)
@@ -64,9 +65,9 @@ Shadow::Shadow(Material* shadow_mat, const AbstractKart& kart)
     {
         std::array<uint16_t, 6> indices = {{ 0, 1, 2, 0, 2, 3 }};
         scene::IMeshBuffer* buffer = NULL;
-        if (irr_driver->getVideoDriver()->getDriverType() == video::EDT_VULKAN)
+        if (GE::isGEDriver())
         {
-            buffer = new GE::GEVulkanDynamicSPMBuffer();
+            buffer = GE::createDynamicSPMBuffer();
             video::S3DVertexSkinnedMesh v;
             v.m_color = (video::SColor)-1;
             std::array<video::S3DVertexSkinnedMesh, 4> vertices =

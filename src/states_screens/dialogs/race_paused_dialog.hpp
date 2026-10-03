@@ -24,7 +24,7 @@
 
 namespace GE
 {
-    class GEVulkanDriver;
+    class GEDriver;
 }
 
 namespace GUIEngine
@@ -48,7 +48,7 @@ private:
     int m_touch_controls;
 
     GUIEngine::TextBoxWidget* m_text_box;
-    GE::GEVulkanDriver* m_vk_pbr_toggle;
+    GE::GEDriver* m_vk_pbr_toggle;
 
     virtual void onTextUpdated() OVERRIDE {}
     void handleChat(const irr::core::stringw& text);

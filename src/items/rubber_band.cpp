@@ -38,7 +38,7 @@
 #include <array>
 #include <ge_main.hpp>
 #include <ge_material_manager.hpp>
-#include <ge_vulkan_dynamic_spm_buffer.hpp>
+#include <ge_main.hpp>
 #endif
 #include <IMeshSceneNode.h>
 #include <IVideoDriver.h>
@@ -88,9 +88,9 @@ RubberBand::RubberBand(Plunger *plunger, AbstractKart *kart)
     {
         std::array<uint16_t, 6> indices = {{ 0, 1, 2, 0, 2, 3 }};
         scene::IMeshBuffer* buffer = NULL;
-        if (irr_driver->getVideoDriver()->getDriverType() == video::EDT_VULKAN)
+        if (GE::isGEDriver())
         {
-            buffer = new GE::GEVulkanDynamicSPMBuffer();
+            buffer = GE::createDynamicSPMBuffer();
             video::S3DVertexSkinnedMesh v;
             v.m_normal = 0x1FF << 10;
             v.m_color = color;

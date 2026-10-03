@@ -32,7 +32,7 @@
 #include <IGUIEnvironment.h>
 #ifndef SERVER_ONLY
 #include <ge_main.hpp>
-#include <ge_vulkan_driver.hpp>
+#include <ge_driver.hpp>
 #endif
 
 using namespace GUIEngine;
@@ -264,11 +264,11 @@ GUIEngine::EventPropagation CustomVideoSettingsDialog::processEvent(const std::s
             OptionsScreenVideo::getInstance()->updateBlurSlider();
             GE::GEScreenSpaceReflectionType prev_gssrt = GE::getGEConfig()->m_screen_space_reflection_type;
             OptionsScreenVideo::setSSR();
-            if (GE::getDriver()->getDriverType() == video::EDT_VULKAN)
+            if (GE::isGEDriver())
             {
                 bool need_recreate_swapchain = GE::getGEConfig()->m_screen_space_reflection_type != prev_gssrt;
                 if (need_recreate_swapchain || pbr_changed || ibl_changed)
-                    GE::getVKDriver()->updateDriver(need_recreate_swapchain, pbr_changed, ibl_changed);
+                    GE::getGEDriver()->updateDriver(need_recreate_swapchain, pbr_changed, ibl_changed);
             }
             // sameRestart will have the same effect
             if (!(CVS->isGLSL() && pbr_changed))
@@ -303,7 +303,7 @@ void CustomVideoSettingsDialog::updateActivation(const std::string& renderer)
 #ifndef SERVER_ONLY
     bool light = getWidget<CheckBoxWidget>("dynamiclight")->getState();
     bool real_light = light;
-    bool vk = GE::getDriver()->getDriverType() == video::EDT_VULKAN;
+    bool vk = GE::isGEDriver();
     bool modern_gl = CVS->isGLSL();
 
     // If showing enabled options for a specific renderer has

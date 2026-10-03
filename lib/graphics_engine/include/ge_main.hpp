@@ -14,12 +14,13 @@ namespace irr
 {
     namespace scene
     {
-        class IMesh; class IAnimatedMesh;
+        class IMesh; class IAnimatedMesh; class IMeshBuffer;
     }
 }
 
 namespace GE
 {
+class GEDriver;
 class GEOcclusionCulling;
 class GESPMBuffer;
 class GEVulkanDriver;
@@ -60,6 +61,16 @@ void setVideoDriver(irr::video::IVideoDriver* driver);
 void setShaderFolder(const std::string& path);
 irr::video::IVideoDriver* getDriver();
 GE::GEVulkanDriver* getVKDriver();
+/** Returns the active GE renderer (Vulkan or WebGPU), or NULL for others. */
+GE::GEDriver* getGEDriver();
+inline bool isGEDriver(irr::video::E_DRIVER_TYPE type)
+{
+    return type == irr::video::EDT_VULKAN || type == irr::video::EDT_WEBGPU;
+}
+/** True if the current video driver is a GE renderer (Vulkan or WebGPU). */
+bool isGEDriver();
+/** Creates a vertex/index buffer that is re-uploaded whenever it changes. */
+irr::scene::IMeshBuffer* createDynamicSPMBuffer();
 const std::string& getShaderFolder();
 GEConfig* getGEConfig();
 void deinit();

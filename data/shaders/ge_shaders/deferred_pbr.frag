@@ -1,6 +1,7 @@
-layout (input_attachment_index = 0, binding = 0) uniform subpassInput u_color;
-layout (input_attachment_index = 1, binding = 1) uniform subpassInput u_normal;
-layout (input_attachment_index = 2, binding = 2) uniform subpassInput u_depth;
+#include "utils/subpass_input.glsl"
+GE_SUBPASS_INPUT(0, 0, u_color)
+GE_SUBPASS_INPUT(1, 1, u_normal)
+GE_SUBPASS_INPUT(2, 2, u_depth)
 
 layout(location = 0) out vec4 o_color;
 
@@ -15,12 +16,12 @@ layout(push_constant) uniform Constants
 
 void main()
 {
-    float depth = subpassLoad(u_depth).x;
+    float depth = GE_SUBPASS_LOAD(u_depth).x;
     if (!u_has_skybox && depth == 1.0)
         discard;
-    vec3 diffuse_color = subpassLoad(u_color).xyz;
-    vec3 pbr = vec3(subpassLoad(u_normal).zw, subpassLoad(u_color).w);
-    vec3 world_normal = DecodeNormal(subpassLoad(u_normal).xy);
+    vec3 diffuse_color = GE_SUBPASS_LOAD(u_color).xyz;
+    vec3 pbr = vec3(GE_SUBPASS_LOAD(u_normal).zw, GE_SUBPASS_LOAD(u_color).w);
+    vec3 world_normal = DecodeNormal(GE_SUBPASS_LOAD(u_normal).xy);
     vec3 xpos = getPosFromUVDepth(vec3(gl_FragCoord.xy, depth),
         u_camera.m_viewport, u_camera.m_inverse_projection_matrix);
     vec3 eyedir = -normalize(xpos);

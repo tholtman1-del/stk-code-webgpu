@@ -10,6 +10,12 @@ namespace GE
 {
 
 // ----------------------------------------------------------------------------
+irr::scene::IMeshBuffer* createDynamicSPMBuffer()
+{
+    return new GEVulkanDynamicSPMBuffer();
+}   // createDynamicSPMBuffer
+
+// ----------------------------------------------------------------------------
 GEVulkanDynamicSPMBuffer::GEVulkanDynamicSPMBuffer()
 {
     unsigned frame_count = GEVulkanDriver::getMaxFrameInFlight() + 1;

@@ -1354,7 +1354,7 @@ bool Track::loadMainTrack(const XMLNode &root)
     handleAnimatedTextures(scene_node, *track_node);
 #ifndef SERVER_ONLY
     if (!GUIEngine::isNoGraphics() &&
-        GE::getDriver()->getDriverType() == video::EDT_VULKAN)
+        GE::isGEDriver())
     {
         std::vector<std::array<btVector3, 3> > tris;
         convertTrackToBullet(scene_node, &tris);
@@ -2591,7 +2591,7 @@ void Track::handleSky(const XMLNode &xml_node, const std::string &filename)
             {
 #ifndef SERVER_ONLY
                 std::string fullpath;
-                if (GE::getDriver()->getDriverType() == video::EDT_VULKAN)
+                if (GE::isGEDriver())
                 {
                     io::path p = file_manager->searchTexture(v[i]).c_str();
                     if (!p.empty())
@@ -2610,7 +2610,7 @@ void Track::handleSky(const XMLNode &xml_node, const std::string &filename)
                     obj = t;
                 }
 #ifndef SERVER_ONLY
-                if (GE::getDriver()->getDriverType() == video::EDT_VULKAN)
+                if (GE::isGEDriver())
                 {
                     GE::getGEConfig()->m_ondemand_load_texture_paths.erase(
                         fullpath);

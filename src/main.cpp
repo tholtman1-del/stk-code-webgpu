@@ -198,6 +198,7 @@ extern "C" {
 #include <IEventReceiver.h>
 
 #include "main_loop.hpp"
+#include <ge_main.hpp>
 #include "achievements/achievements_manager.hpp"
 #include "addons/addons_manager.hpp"
 #include "addons/news_manager.hpp"
@@ -2522,7 +2523,7 @@ int main(int argc, char *argv[])
                 }
                 Log::warn("OpenGL", "Driver is too old!");
             }
-            else if (!CVS->isGLSL() && irr_driver->getVideoDriver()->getDriverType() != video::EDT_VULKAN)
+            else if (!CVS->isGLSL() && !GE::isGEDriver())
             {
                 #if !defined(MOBILE_STK)
                 if (UserConfigParams::m_old_driver_popup)

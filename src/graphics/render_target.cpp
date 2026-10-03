@@ -26,6 +26,7 @@
 
 #include <ISceneManager.h>
 #include <IVideoDriver.h>
+#include <ge_main.hpp>
 
 //-----------------------------------------------------------------------------
 GL1RenderTarget::GL1RenderTarget(const irr::core::dimension2du &dimension,
@@ -52,7 +53,7 @@ GL1RenderTarget::GL1RenderTarget(const irr::core::dimension2du &dimension,
 GL1RenderTarget::~GL1RenderTarget()
 {
     // GE doesn't add rtt texture to cache
-    if (m_render_target_texture->getDriverType() == video::EDT_VULKAN)
+    if (GE::isGEDriver(m_render_target_texture->getDriverType()))
         m_render_target_texture->drop();
 }
 

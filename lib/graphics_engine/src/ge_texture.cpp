@@ -1,8 +1,14 @@
 #include "ge_main.hpp"
+#include "ge_texture.hpp"
+
+#include <IrrCompileConfig.h>
+#ifdef _IRR_COMPILE_WITH_WEBGPU_
+#include "ge_wgpu_texture.hpp"
+#else
 #include "ge_dx9_texture.hpp"
 #include "ge_gl_texture.hpp"
 #include "ge_vulkan_texture.hpp"
-#include "ge_texture.hpp"
+#endif
 
 #include <IFileSystem.h>
 #include <IVideoDriver.h>
@@ -96,6 +102,10 @@ irr::video::ITexture* createTexture(const std::string& path,
 {
     switch (GE::getDriver()->getDriverType())
     {
+#ifdef _IRR_COMPILE_WITH_WEBGPU_
+    case video::EDT_WEBGPU:
+        return new GEWGPUTexture(path, image_mani);
+#else
     case video::EDT_OPENGL:
     case video::EDT_OGLES2:
         return new GEGLTexture(path, image_mani);
@@ -105,6 +115,7 @@ irr::video::ITexture* createTexture(const std::string& path,
 #endif
     case video::EDT_VULKAN:
         return new GEVulkanTexture(path, image_mani);
+#endif
     default:
         return NULL;
     }
@@ -116,6 +127,10 @@ irr::video::ITexture* createTexture(video::IImage* img,
 {
     switch (GE::getDriver()->getDriverType())
     {
+#ifdef _IRR_COMPILE_WITH_WEBGPU_
+    case video::EDT_WEBGPU:
+        return new GEWGPUTexture(img, name);
+#else
     case video::EDT_OPENGL:
     case video::EDT_OGLES2:
         return new GEGLTexture(img, name);
@@ -125,6 +140,7 @@ irr::video::ITexture* createTexture(video::IImage* img,
 #endif
     case video::EDT_VULKAN:
         return new GEVulkanTexture(img, name);
+#endif
     default:
         return NULL;
     }
@@ -136,6 +152,10 @@ irr::video::ITexture* createFontTexture(const std::string& name,
 {
     switch (GE::getDriver()->getDriverType())
     {
+#ifdef _IRR_COMPILE_WITH_WEBGPU_
+    case video::EDT_WEBGPU:
+        return new GEWGPUTexture(name, size, single_channel);
+#else
     case video::EDT_OPENGL:
     case video::EDT_OGLES2:
         return new GEGLTexture(name, size, single_channel);
@@ -145,6 +165,7 @@ irr::video::ITexture* createFontTexture(const std::string& name,
 #endif
     case video::EDT_VULKAN:
         return new GEVulkanTexture(name, size, single_channel);
+#endif
     default:
         return NULL;
     }

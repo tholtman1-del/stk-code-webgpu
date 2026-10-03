@@ -32,7 +32,7 @@
 #include <algorithm>
 #ifndef SERVER_ONLY
 #include <ge_main.hpp>
-#include <ge_vulkan_driver.hpp>
+#include <ge_driver.hpp>
 #include <ge_texture.hpp>
 #endif
 
@@ -42,7 +42,7 @@
 STKTexManager::~STKTexManager()
 {
 #ifndef SERVER_ONLY
-    GE::GEVulkanDriver* gevd = GE::getVKDriver();
+    GE::GEDriver* gevd = GE::getGEDriver();
     if (gevd)
     {
         gevd->waitIdle(/*flush_command_loader*/false);
@@ -254,7 +254,7 @@ bool STKTexManager::hasTexture(const std::string& path)
 void STKTexManager::reloadAllTextures(bool mesh_texture_only)
 {
 #ifndef SERVER_ONLY
-    GE::GEVulkanDriver* gevd = GE::getVKDriver();
+    GE::GEDriver* gevd = GE::getGEDriver();
     if (gevd)
     {
         gevd->waitIdle();

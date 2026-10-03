@@ -38,7 +38,7 @@
 
 #ifndef SERVER_ONLY
 #include <ge_main.hpp>
-#include <ge_vulkan_dynamic_spm_buffer.hpp>
+#include <ge_main.hpp>
 #include <IMeshSceneNode.h>
 #include <IVideoDriver.h>
 #include <SMesh.h>
@@ -261,8 +261,8 @@ SkidMarks::SkidMarkQuads::SkidMarkQuads(const Vec3 &left,
     else
     {
         scene::IMeshBuffer* buffer = NULL;
-        if (irr_driver->getVideoDriver()->getDriverType() == video::EDT_VULKAN)
-            buffer = new GE::GEVulkanDynamicSPMBuffer();
+        if (GE::isGEDriver())
+            buffer = GE::createDynamicSPMBuffer();
         else
             buffer = new scene::SMeshBuffer();
         material->setMaterialProperties(&buffer->getMaterial(), buffer);
@@ -352,7 +352,7 @@ void SkidMarks::SkidMarkQuads::addLegacy(const Vec3& left,
     // too much with the track.
     int n = buffer->getVertexCount();
 
-    if (irr_driver->getVideoDriver()->getDriverType() == video::EDT_VULKAN)
+    if (GE::isGEDriver())
     {
         std::array<video::S3DVertexSkinnedMesh, 2> v = {{ }};
         v[0].m_color = m_start_color;

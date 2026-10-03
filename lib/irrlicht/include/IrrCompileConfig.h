@@ -49,6 +49,13 @@
 #define _IRR_COMPILE_WITH_VULKAN_
 #endif
 
+//! WebGPU driver, only built for the browser (Emscripten)
+#if defined(__EMSCRIPTEN__) && !defined(NO_IRR_COMPILE_WITH_WEBGPU_)
+#define _IRR_COMPILE_WITH_WEBGPU_
+#else
+#undef _IRR_COMPILE_WITH_WEBGPU_
+#endif
+
 //! Uncomment this line to compile with the SDL device
 //#define _IRR_COMPILE_WITH_SDL_DEVICE_
 // Always use SDL2 in STK unless server only compilation
